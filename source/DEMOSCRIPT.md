@@ -2,169 +2,217 @@
 
 ## Synopsis
 
-The demo is intended to show the problem that Lightwell is solving for. The demo shows a Java application, "Parasol Payment Gateway" using Maven as the build tool.
+This demonstration uses the small Java application "Parasol Payment Gateway"
+to show how a vulnerability in a transitive dependency can broaden the scope
+of a conventional dependency upgrade, and how Lightwell offers a targeted
+patched dependency instead.
 
-This is a very simple, very small Java application using a single dependency (Jackson). We show that this introduces a set of child dependencies, and that a CVE detected in one of those child dependencies (woodstox) is not trivial to correct. We then show how Lightwell makes the remediation simpler.
+The application directly depends on Jackson XML, which brings in Woodstox.
+The example focuses on CVE-2022-40152. The failed upgrade demonstrates Maven
+dependency-convergence enforcement, not proven runtime incompatibility.
+
+This is a locally edited adaptation of Derek Waters' demo script. The Java
+application and POM variants remain unchanged. Their Enforcer exceptions,
+including the exception for the Lightwell patch version, remain in place.
 
 ## Demo Preparation
 
-To run this demo, you need to:
+Run these manual steps from this directory (`source/` in the local package).
+The automated runner in the parent directory uses isolated settings and caches;
+the manual instructions below use your normal Maven configuration.
 
-1. Install OpenJDK11 (includes Maven)
-2. Clone the demo repo locally
-3. Install trivy (https://trivy.dev/docs/latest/getting-started/installation/#install-script-official)
-4. Configure Maven to include the lightwell repositories:
-  1. Edit the file ~/.m2/settings.xml
-  2. Add the following repo content:
+1. Install a JDK supporting Java 11 compilation and install Maven separately.
+2. Install [Trivy][trivy-install] if you want to demonstrate scanning.
+3. Configure Maven to include the Lightwell repositories. Merge the following
+   profiles into `~/.m2/settings.xml`, preserving any existing settings:
 
-```
-<settings>
-  <profiles>
-    <profile>
-      <id>lightwell-validated</id>
-      <repositories>
-        <repository>
-          <id>lightwell-validated</id>
-          <name>Red Hat Lightwell Network - Validated</name>
-          <url>https://packages.redhat.com/lightwell/public-lightwell-demo/java/validated/</url>
-          <releases>
-            <enabled>true</enabled>
-          </releases>
-          <snapshots>
-            <enabled>false</enabled>
-          </snapshots>
-        </repository>
-      </repositories>
-    </profile>		
-    <profile>
-      <id>lightwell-remediated</id>
-      <repositories>
-        <repository>
-          <id>lightwell-remediated</id>
-          <name>Red Hat Lightwell Network - Remediated</name>
-          <url>https://packages.redhat.com/lightwell/public-lightwell-demo/java/remediated/</url>
-          <releases>
-            <enabled>true</enabled>
-          </releases>
-          <snapshots>
-            <enabled>false</enabled>
-          </snapshots>
-        </repository>
-      </repositories>
-    </profile>
-  </profiles>
-  <activeProfiles>
-    <activeProfile>lightwell-remediated</activeProfile>
-    <activeProfile>lightwell-validated</activeProfile>
-  </activeProfiles>
-</settings>
-```
-5. Preinstall the "security-bom" locally by running:
+   ```xml
+   <settings>
+     <profiles>
+       <profile>
+         <id>lightwell-validated</id>
+         <repositories>
+           <repository>
+             <id>lightwell-validated</id>
+             <name>Red Hat Lightwell Network - Validated</name>
+             <url>https://packages.redhat.com/lightwell/public-lightwell-demo/java/validated/</url>
+             <releases>
+               <enabled>true</enabled>
+             </releases>
+             <snapshots>
+               <enabled>false</enabled>
+             </snapshots>
+           </repository>
+         </repositories>
+       </profile>
+       <profile>
+         <id>lightwell-remediated</id>
+         <repositories>
+           <repository>
+             <id>lightwell-remediated</id>
+             <name>Red Hat Lightwell Network - Remediated</name>
+             <url>https://packages.redhat.com/lightwell/public-lightwell-demo/java/remediated/</url>
+             <releases>
+               <enabled>true</enabled>
+             </releases>
+             <snapshots>
+               <enabled>false</enabled>
+             </snapshots>
+           </repository>
+         </repositories>
+       </profile>
+     </profiles>
+     <activeProfiles>
+       <activeProfile>lightwell-remediated</activeProfile>
+       <activeProfile>lightwell-validated</activeProfile>
+     </activeProfiles>
+   </settings>
+   ```
 
-``` bash
-cd packaging-pom
-mvn install
-```
+4. Install the local security BOM:
 
-6. If you're rerunning the demo, clear the maven cache with:
+   ```bash
+   mvn -f packaging-pom/pom.xml install
+   ```
 
-```bash
-mvn dependency:purge-local-repository
-```
+5. Restore the initial POM before each demonstration:
+
+   ```bash
+   cp pom_0_original.xml pom.xml
+   ```
+
+For a genuinely clean-cache comparison, use the automated runner instead of
+relying on this manual walkthrough's shared Maven cache. The runner validates
+the source manifest, so restore `pom.xml` to `pom_0_original.xml` after manually
+switching scenarios and before running automated validation.
 
 ## Demo Process and Suggested Description
 
 ### The Initial Build
 
-1. Show the App.java file briefly, indicating that it simply parses some XML payment information and logs it to the output.
-2. Show the default pom.xml file, indicating the dependency on the jackson-xml library.
-3. Open a Terminal.
-4. Show the dependency tree, which includes a bunch of child dependencies, by running:
+1. Show `App.java`. It parses fixed payment XML and prints the payment details.
+2. Show `pom.xml` and its direct dependency on Jackson XML 2.10.2.
+3. Build and show the dependency tree, including Woodstox 6.0.3:
 
-```mvn dependency:tree```
+   ```bash
+   mvn clean verify
+   mvn dependency:tree
+   ```
 
-5. Run the application:
+4. Run the application:
 
-```mvn compile exec:java```
+   ```bash
+   mvn compile exec:java
+   ```
 
-6. Confirm that the application has parsed some XML and written the values to stdout.
+5. Confirm transaction `PX-1001`, amount `129.99 USD` and status `APPROVED`.
 
 ### The CVE Issue
 
-1. Run the security scanner:
+1. Run the security scanner and retain its actual output:
 
-```trivy -q fs .```
+   ```bash
+   trivy -q fs .
+   ```
 
-2. Call out one CVE in particular: CVE-2022-40152. This is specific to the child woodstox library.
-3. Open a browser to the CVE page (https://nvd.nist.gov/vuln/detail/cve-2022-40152)
-4. Show the Affected Products lists woodstox
-5. Open the woodstox library page on Maven (https://mvnrepository.com/artifact/com.fasterxml.woodstox/woodstox-core)
-6. Show that the CVE is corrected in 6.4.0
-7. Update the pom.xml to the pinned woodstox version:
+2. Identify CVE-2022-40152 for Woodstox. Open its [NVD entry][cve].
+3. Show the [Woodstox versions][woodstox] and the conventional fix in 6.4.0.
+4. Select the POM that directly pins Woodstox 6.4.0:
 
-```cp pom_1_pinned_woodstox.xml pom.xml```
+   ```bash
+   cp pom_1_pinned_woodstox.xml pom.xml
+   mvn clean verify
+   ```
 
-8. Open pom.xml and show the new pinned version 6.4.0 of woodstox.
-9. Clean the maven repo and verify that the new config is OK:
-
-```mvn clean verify```
-
-10. Show that the error is caused because version 6.4.0 of woodstox conflicts with the version of jackson-xml.
+5. Show the expected Maven Enforcer dependency-convergence error. Explain that
+   this is a policy conflict between declared dependency paths, not proof that
+   the application would fail at runtime.
 
 ### The Upgrade Problem
 
-1. Explain what happens if we need to upgrade the parent library.
-2. Show the page that indicates that v2.13.5 of jackson-xml includes 6.4.0 or woodstox (https://mvnrepository.com/artifact/com.fasterxml.jackson.dataformat/jackson-dataformat-xml/2.13.5/dependencies)
-3. Update the pom:
+1. Show that [Jackson XML 2.13.5][jackson] declares Woodstox 6.4.0.
+2. Select the conventional upgrade and validate it:
 
-```cp pom_2_pinned_upgrade_jackson.xml pom.xml```
+   ```bash
+   cp pom_2_pinned_upgrade_jackson.xml pom.xml
+   mvn clean verify
+   mvn dependency:tree
+   mvn compile exec:java
+   ```
 
-4. Show the new pom and the dependencies. Point out that we've had to update the parent library to correct a CVE in the child dependency. And what happens as more and more CVEs are discovered?
-5. Verify that the system builds now:
-
-```mvn clean verify```
-```mvn dependency:tree```
-```mvn compile exec:java```
+3. Compare the dependency trees. The conventional fix changes Jackson and other
+   resolved dependencies as well as Woodstox.
+4. Explain the additional validation scope. The sample output is a smoke check,
+   not a comprehensive compatibility test.
 
 ### The Lightwell Solution
 
-1. Now show an easier way. What if we could remediate the CVE without changing any dependent libraries?
-2. Show the Lighwell Demo remediation page (https://console.redhat.com/lightwell/demo). Show the Java Remediated repo, and the woodstox-core 6.0.3 remediation
-3. Update the pom:
+1. Open the [Lightwell demo][lightwell-demo] and show the Woodstox 6.0.3
+   remediation in the Java remediated repository.
+2. Select the Lightwell POM:
 
-```cp pom_3_lightwell.xml pom.xml```
+   ```bash
+   cp pom_3_lightwell.xml pom.xml
+   ```
 
-4. Show our configuration for Lightwell (~/.m2/settings.xml) and that we've added the Lightwell repos in addition to the default Maven repo.
-5. Show the new pom, and that we've got our original jackson library, with a local import of a new "security packaging BOM".
-6. Show packaging-pom/pom.xml and show that this can be managed by our DevSecOps team, and imported by all app teams.
-7. Verify that this works:
+3. Show the Maven repository settings, the retained Jackson 2.10.2 dependency,
+   and the imported `com.parasol:security-bom:2026.09.18`.
+4. Show `packaging-pom/pom.xml`, which selects Woodstox `6.0.3.rhlw-00001`.
+   Explain that a platform team can maintain this BOM. Also disclose the
+   existing Enforcer exceptions; do not present them as compatibility proof.
+5. Build, inspect the resolved versions and run the application:
 
-```mvn clean verify```
-```mvn dependency:tree```
-```mvn compile exec:java```
+   ```bash
+   mvn clean verify
+   mvn dependency:tree
+   mvn compile exec:java
+   ```
 
-8. Show the lightwell-woodstox-core.openvex file (a sample) which indicates that the CVE in question was corrected by the Lightwell patched library.
-9. Rerun our security scanner.
+6. Show `lightwell-woodstox-core.openvex`. This is a sample assertion for the
+   demonstration, not independent proof of the security fix.
+7. Compare the raw scan with a scan using the sample VEX:
 
-```trivy -q --vex lightwell-woodstox-core.openvex fs .```
+   ```bash
+   trivy -q fs .
+   trivy -q --vex lightwell-woodstox-core.openvex fs .
+   ```
 
-10. Show that CVE-2022-40152 is no longer listed, as we've now patched it.
+8. Optionally filter the VEX-assisted output for the target CVE:
 
-```trivy -q --vex lightwell-woodstox-core.openvex fs . | grep 40152```
+   ```bash
+   trivy -q --vex lightwell-woodstox-core.openvex fs . | grep 40152
+   ```
+
+9. Explain any difference as scanner handling of the supplied assertion. Check
+   that scanning completed successfully; an empty filtered result alone does
+   not prove remediation, and unrelated findings may remain.
+10. Restore the baseline POM when finished:
+
+    ```bash
+    cp pom_0_original.xml pom.xml
+    ```
 
 ## Lens Stretch Goal
 
-You can generate a CycloneDX SBOM from a Maven project:
+Generate a CycloneDX SBOM from the selected Maven scenario:
 
 ```bash
 mvn org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeAggregateBom
 ```
 
-And then load the resultant file(s) target/bom.json or target/bom.xml to [Lightwell Lens](https://console.redhat.com/lightwell/lens)
+Load `target/bom.json` or `target/bom.xml` into [Lightwell Lens][lens].
 
 ## Accompanying Resources
 
-Slide deck to go along with the demo, including YouTube links to a recording of this demo, are here (Red Hat internal):
+The original [slide deck][slides] includes links to the recording and requires
+Red Hat internal access. The public [recording][recording] demonstrates the
+Artifactory integration; this walkthrough uses direct Maven configuration.
 
-https://docs.google.com/presentation/d/1H5tMrGp9n_Prq_jT571ntMGYDndQL4_o3tSdecbC4V8/edit?slide=id.g3e71e2e86e1_0_1375&pli=1#slide=id.g3e71e2e86e1_0_1375
-
+[trivy-install]: https://trivy.dev/docs/latest/getting-started/installation/#install-script-official
+[cve]: https://nvd.nist.gov/vuln/detail/cve-2022-40152
+[woodstox]: https://mvnrepository.com/artifact/com.fasterxml.woodstox/woodstox-core
+[jackson]: https://mvnrepository.com/artifact/com.fasterxml.jackson.dataformat/jackson-dataformat-xml/2.13.5/dependencies
+[lightwell-demo]: https://console.redhat.com/lightwell/demo
+[lens]: https://console.redhat.com/lightwell/lens
+[slides]: https://docs.google.com/presentation/d/1H5tMrGp9n_Prq_jT571ntMGYDndQL4_o3tSdecbC4V8/edit
+[recording]: https://www.youtube.com/watch?v=M7C1xSZd6ek

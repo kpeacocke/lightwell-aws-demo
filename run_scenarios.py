@@ -22,6 +22,29 @@ SCENARIOS = {
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
+def render_report(report):
+    """Render recorded results without rerunning or changing validation."""
+    lines = [
+        '# Local build validation', '', f"Run: {report['run_id']}", '',
+        '| Scenario | Result |', '| --- | --- |',
+    ]
+    for result in report['scenarios']:
+        lines.append(f"| {result['name']} | {result['status']} |")
+    lines += ['', '## Checks']
+    for result in report['scenarios']:
+        lines += ['', f"### {result['name']}", '']
+        for key, value in result['checks'].items():
+            lines.append(f'- `{key}`: {value}')
+    lines += [
+        '', '## Scope', '',
+        'These are build, dependency and sample-output checks,',
+        'not CVE exploit tests or AWS scanner validation.', '',
+        'Upstream Enforcer exceptions are unchanged. Target bytecode is Java 11;',
+        'actual build/runtime versions are in `toolchain.txt`.',
+    ]
+    return '\n'.join(lines) + '\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work-dir', type=Path, required=True, help='Scratch location for fresh builds and Maven caches')
@@ -107,12 +130,7 @@ def main():
         report['scenarios'].append(result)
         (evidence / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
         print(f"{name}: {result['status']}", flush=True)
-    lines = ['# Local build validation', '', f'Run: {run_id}', '', '| Scenario | Result | Checks |', '|---|---|---|']
-    for result in report['scenarios']:
-        checks = '; '.join(f'{k}: {v}' for k, v in result['checks'].items())
-        lines.append(f"| {result['name']} | {result['status']} | {checks} |")
-    lines += ['', 'These are build, dependency and sample-output checks, not CVE exploit tests or AWS scanner validation.', 'Upstream Enforcer exceptions are unchanged. Target bytecode is Java 11; actual build/runtime versions are in toolchain.txt.']
-    (evidence / 'REPORT.md').write_text('\n'.join(lines) + '\n')
+    (evidence / 'REPORT.md').write_text(render_report(report))
     print(f'Evidence: {evidence}', flush=True)
     return 0 if all(r['status'] == 'PASS' for r in report['scenarios']) else 1
 

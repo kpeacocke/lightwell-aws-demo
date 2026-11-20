@@ -19,7 +19,7 @@ Results appear in `evidence/<UTC-run-id>/REPORT.md` and `results.json`, with ful
 ## Scenarios
 
 | Scenario | Jackson XML | Woodstox | Expected result |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | baseline | 2.10.2 | 6.0.3 | Build and payment smoke check succeed |
 | pinned-failure | 2.10.2 | 6.4.0 direct pin | Maven Enforcer rejects convergence |
 | conventional | 2.13.5 | 6.4.0 | Build and payment smoke check succeed |
@@ -29,11 +29,11 @@ The successful cases also validate resolved dependency-tree entries and record d
 
 ## Provenance and important limits
 
-Source: https://github.com/derekwaters/parasol-payment-gateway
+Source: <https://github.com/derekwaters/parasol-payment-gateway>
 
 Pinned commit: `d96ad5c736b543d9f288d509bae39d42aa9076bf`.
 
-`source/` contains the original application, POM variants, local BOM, script, README and sample VEX, copied without modifications. The upstream README has stale layout/description details; the actual source is authoritative. `config/lightwell-settings.xml` is copied from the upstream sample settings. The runner selects a POM only in scratch copies. It pins the dependency-tree reporting plugin to 3.8.1 without editing the original build.
+`source/` contains the unchanged upstream application, POM variants, local BOM, README and sample VEX. `source/DEMOSCRIPT.md` is a locally edited, lint-clean adaptation with corrected manual-run instructions and evidence qualifications. `SOURCE-MANIFEST.json` records its current checksum and the original upstream checksum under `local_adaptations`; the pinned commit identifies the upstream baseline, not an assertion that the adapted script is byte-identical. The upstream README has stale layout/description details; the actual source is authoritative. `config/lightwell-settings.xml` is copied from the upstream sample settings. The runner selects a POM only in scratch copies. It pins the dependency-tree reporting plugin to 3.8.1 without editing the original build.
 
 All original Maven Enforcer exceptions remain, including stax2-api and the exact Lightwell patched version. The expected failure is a dependency-policy violation, not evidence of runtime incompatibility. The payment output is a smoke check of fixed XML, not a security regression test or comprehensive compatibility test. Maven's verify phase does not by itself imply that a meaningful test suite exists.
 

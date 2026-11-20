@@ -7,7 +7,7 @@ Upstream commit: `d96ad5c736b543d9f288d509bae39d42aa9076bf`.
 All four scenarios met their expected outcomes using separate initially empty Maven caches.
 
 | Scenario | Observed outcome |
-|---|---|
+| --- | --- |
 | Baseline | Build, dependency versions and payment output passed |
 | Pinned Woodstox | Expected Enforcer failure naming Woodstox 6.0.3 and 6.4.0 |
 | Conventional | Build, dependency versions and payment output passed |
@@ -16,7 +16,7 @@ All four scenarios met their expected outcomes using separate initially empty Ma
 ## Measured dependency changes
 
 | Artifact | Baseline | Conventional | Lightwell |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | com.fasterxml.jackson.core:jackson-annotations | 2.10.2 | 2.13.5 | 2.10.2 |
 | com.fasterxml.jackson.core:jackson-core | 2.10.2 | 2.13.5 | 2.10.2 |
 | com.fasterxml.jackson.core:jackson-databind | 2.10.2 | 2.13.5 | 2.10.2 |
