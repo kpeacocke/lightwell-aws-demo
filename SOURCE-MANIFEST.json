@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/derekwaters/parasol-payment-gateway",
+  "commit": "d96ad5c736b543d9f288d509bae39d42aa9076bf",
+  "sha256": {
+    "DEMOSCRIPT.md": "d875a58887792eb5f9973336d31555f36ee85561652a4ea631a7cd2e95ee9689",
+    "README.md": "fcb8ddf438124f6ec5055912d8b482d940066218f282f73629f6d38aa401ce5d",
+    "lightwell-woodstox-core.openvex": "cf9552899866f8457e1a1ee9e0b2d3794f32ad6d31eebb9fa563724e41787fe3",
+    "packaging-pom/pom.xml": "5ee9109aa60497ea6cc06d554b2a0f228fbd54f49f583861e82eb8706d991dbd",
+    "pom.xml": "da2adbdbdc6eea887befe08ad5ec5dad40fedd32ab1ff3fbedbf79dc25178a1b",
+    "pom_0_original.xml": "da2adbdbdc6eea887befe08ad5ec5dad40fedd32ab1ff3fbedbf79dc25178a1b",
+    "pom_1_pinned_woodstox.xml": "c30ae35403ca6031c987dfcbf37fec068a987a316a22efc767c9dcbbc0e9275f",
+    "pom_2_pinned_upgrade_jackson.xml": "c6c6d99d4f775aa0437ea3ed40591675db574ac6a1f6599c2ee7953e2d3c5e62",
+    "pom_3_lightwell.xml": "1cd7dde489dbd761f424b1c09811b2abc8a1f55d073157174c9cd752a5836f87",
+    "src/main/java/com/parasol/paymentgateway/App.java": "0e28f6aaa27000fe03b28d532c3ff26f0ab0d8d386053a8d468c09c86b6f35bf"
+  }
+}
