@@ -1,0 +1,5 @@
+* text=auto
+
+# Preserve the pinned source and copied upstream settings byte-for-byte.
+/source/** -text
+/config/lightwell-settings.xml -text

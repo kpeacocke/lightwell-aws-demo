@@ -16,6 +16,7 @@
         "paymentgateway",
         "rhlw",
         "stax",
-        "Woodstox"
+        "Woodstox",
+        "woodstoxdemo"
     ]
 }

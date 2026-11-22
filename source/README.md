@@ -1,7 +1,8 @@
 # woodstox-cve-demo
 
 Demonstrates the dependency-chain impact of fixing **CVE-2022-40152** (a
-denial-of-service vulnerability in [woodstox-core](https://github.com/FasterXML/woodstox),
+denial-of-service vulnerability in
+[woodstox-core](https://github.com/FasterXML/woodstox),
 fixed in `6.4.0` and `5.4.0`).
 
 The application depends on an old version of `jackson-dataformat-xml` — the
@@ -29,7 +30,7 @@ Full demo instructions are in the DEMOSCRIPT.md file.
 
 ## Project layout
 
-```
+```text
 pom.xml
 src/main/java/com/example/woodstoxdemo/App.java
 ```
@@ -46,10 +47,6 @@ a `dependencyConvergence`-style enforcer rule in CI so that a version skew like
 "new woodstox + old parent library" fails the build with a clear, actionable
 message instead of shipping silently.
 
-
-
 ## Security Scanner Setup
-##
 
-https://trivy.dev/docs/latest/guide/advanced/self-hosting/#vex-hub
-
+<https://trivy.dev/docs/latest/guide/advanced/self-hosting/#vex-hub>
