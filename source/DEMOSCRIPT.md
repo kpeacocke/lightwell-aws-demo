@@ -15,6 +15,27 @@ This is a locally edited adaptation of Derek Waters' demo script. The Java
 application and POM variants remain unchanged. Their Enforcer exceptions,
 including the exception for the Lightwell patch version, remain in place.
 
+## Fit with the AWS slide deck
+
+Use the [AWS presenter flow](../DEMO.md) for the short presentation. Place this
+technical walkthrough after **Integrating Lightwell Updates**. The steps below
+retain Derek's manual build and scanner flow; they do not execute AWS services.
+
+- **How Enterprises Build Today:** show the baseline dependency tree and output.
+- **Integrating Lightwell Updates:** compare the failed direct pin, conventional
+  upgrade and Lightwell BOM path using the same sample-output checks.
+- **Securing with Lightwell:** identify direct Maven access to Red Hat's demo
+  repositories. CodeArtifact delivery remains a proposed integration.
+- **Validate, Deliver:** distinguish raw scanner findings, sample-VEX filtering
+  and the future Inspector image comparison. A successful build is not a
+  security-fix attestation.
+- **Four Strategic Wins:** close with a one-application AWS POC proposal, not
+  claims of proven migration acceleration, token savings or SLSA conformance.
+
+In the proposed AWS extension, CodeBuild runs the scenarios, ECR stores images,
+Inspector scans them and Fargate runs the sample. Keep Transform and Continuum
+as later exercises. The current automated runner only validates local builds.
+
 ## Demo Preparation
 
 Run these manual steps from this directory (`source/` in the local package).

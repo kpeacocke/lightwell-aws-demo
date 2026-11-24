@@ -3,6 +3,22 @@
 This first increment reproduces Derek Waters' four Maven scenarios. It creates
 no AWS resources and does not require Docker.
 
+## Presenting with the AWS slide deck
+
+Use [DEMO.md](DEMO.md) for the deck-aligned presenter flow, evidence locations,
+AWS architecture status and next validation gates. Insert the demonstration
+immediately after **Integrating Lightwell Updates**.
+
+The working demo demonstrates targeted dependency replacement and sample
+execution. The wider AWS workflow is proposed: CodeBuild, ECR/Inspector and
+Fargate come next. CodeArtifact delivery is a separate integration investigation;
+Transform and Continuum are later exercises. No AWS service is invoked by the
+local runner.
+
+The four strategic wins in the deck are hypotheses for a customer POC, not
+measured results of this example. Do not present sample VEX filtering as
+Inspector verification, or artifact hashes as SLSA conformance.
+
 ## Run
 
 Prerequisites: Python 3, Maven, and a JDK capable of compiling Java 11. Internet
@@ -96,7 +112,8 @@ After local scenarios pass: package actual runtime dependencies into three
 consistent images; verify execution without dependency downloads; then use
 ECR/Inspector to establish scan coverage and actual findings. Add CodeBuild,
 Fargate and CloudFormation only after that evidence is understood. AWS account
-configuration is intentionally deferred.
+configuration is intentionally deferred. The acceptance gates and the separate
+CodeArtifact investigation are described in [DEMO.md](DEMO.md).
 
 ## Cleanup
 
