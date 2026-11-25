@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Reproduce four scenarios without changing source or personal Maven settings."""
+"""Reproduce scenarios without changing source or personal Maven settings."""
+
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -11,6 +13,10 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING, List, Tuple
+
+if TYPE_CHECKING:
+    from typing import Dict, TypedDict
 
 ROOT = Path(__file__).resolve().parent
 SCENARIOS = {
@@ -21,11 +27,40 @@ SCENARIOS = {
 }
 
 
-def digest(path):
+if TYPE_CHECKING:
+
+    class CommandResult(TypedDict):
+        label: str
+        argv: List[str]
+        exit_code: int
+
+    class OptionalScenarioFields(TypedDict, total=False):
+        runtime_jars: Dict[str, str]
+        error: str
+
+    class ScenarioResult(OptionalScenarioFields):
+        name: str
+        pom: str
+        commands: List[CommandResult]
+        checks: Dict[str, bool]
+        status: str
+
+    class OptionalReportFields(TypedDict, total=False):
+        source_sha256: Dict[str, str]
+        toolchain: str
+
+    class Report(OptionalReportFields):
+        run_id: str
+        scratch: str
+        source_commit: str
+        scenarios: List[ScenarioResult]
+
+
+def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def render_report(report):
+def render_report(report: Report) -> str:
     """Render recorded results without rerunning or changing validation."""
     lines = [
         "# Local build validation",
@@ -55,7 +90,7 @@ def render_report(report):
     return "\n".join(lines) + "\n"
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--work-dir",
@@ -64,7 +99,16 @@ def main():
         help="Scratch location for fresh builds and Maven caches",
     )
     parser.add_argument("--scenario", choices=["all", *SCENARIOS], default="all")
+    parser.add_argument(
+        "--settings",
+        type=Path,
+        help="Optional Maven settings for all scenarios (for CodeArtifact builds)",
+    )
     args = parser.parse_args()
+    if args.settings:
+        args.settings = args.settings.resolve()
+        if not args.settings.is_file():
+            parser.error("Settings file does not exist")
     manifest = json.loads((ROOT / "SOURCE-MANIFEST.json").read_text())
     for relative, expected in manifest["sha256"].items():
         path = ROOT / "source" / relative
@@ -90,7 +134,7 @@ def main():
     mvn = shutil.which("mvn")
     if not mvn:
         parser.error("Maven is required on PATH")
-    report = {
+    report: Report = {
         "run_id": run_id,
         "scratch": str(scratch),
         "source_commit": manifest["commit"],
@@ -126,6 +170,7 @@ def main():
                 else "empty-settings.xml"
             )
         )
+        settings = args.settings or settings
         base = [
             mvn,
             "-B",
@@ -137,7 +182,7 @@ def main():
             f"-Dmaven.repo.local={cache}",
             "-Dstyle.color=never",
         ]
-        result = {
+        result: ScenarioResult = {
             "name": name,
             "pom": pom,
             "commands": [],
@@ -145,7 +190,7 @@ def main():
             "status": "FAIL",
         }
 
-        def run(label, goals, cwd=project):
+        def run(label: str, goals: List[str], cwd: Path = project) -> Tuple[int, str]:
             command = base + goals
             with (logs / f"{label}.log").open("w") as out:
                 try:
@@ -169,7 +214,9 @@ def main():
         try:
             if name == "lightwell":
                 code, _ = run(
-                    "install-security-bom", ["install"], project / "packaging-pom"
+                    "install-security-bom",
+                    ["install"],
+                    project / "packaging-pom",
                 )
                 result["checks"]["bom_installed"] = code == 0
                 if code:
