@@ -4,9 +4,8 @@
 
 Present this demonstration immediately after **Integrating Lightwell Updates**.
 It provides one concrete Java example behind the broader AWS and Lightwell
-architecture. The local demonstration is validated. AWS integration code is now
-implemented,
-but must be deployed and rehearsed before it can be presented as live.
+architecture. The local demonstration is validated. One AWS run passed with
+Inspector skipped; rehearse in the target account before presenting live.
 
 Opening statement:
 
@@ -24,8 +23,8 @@ Opening statement:
   2026 using Maven 3.10.2 and Java 27, targeting Java 11 bytecode.
 - **Manual extension:** Derek's Trivy and sample-VEX sequence. The automated
   runner does not perform these scans.
-- **Implemented, live-unverified:** CodeArtifact publication, CodeBuild,
-  ECR/Inspector and Fargate integration. See [AWS setup](aws/README.md).
+- **Live-validated once:** CodeArtifact publication, CodeBuild, ECR and Fargate
+  with Inspector skipped. Inspector remains unverified. See [AWS setup](aws/README.md).
 - **Future:** Transform and Continuum exercises.
 - **Not established:** general compatibility, exploit remediation, migration
   acceleration, token savings, SLSA conformance or native Lightwell integration
@@ -38,7 +37,8 @@ environment.
 ## Choose local or AWS execution
 
 For the AWS presentation, follow [aws/README.md](aws/README.md): deploy the
-stack, configure Inspector, publish the source package and start CodeBuild.
+stack, configure Inspector or explicitly skip it, publish the source package and
+start CodeBuild.
 Use the real build ID, image digests, findings and task output in the sequence
 below. The local command is a rehearsal of the Maven scenarios, not a substitute
 for AWS evidence. See [local checks](aws/LOCAL-VALIDATION.md) for the boundary.
@@ -83,9 +83,9 @@ payment service. Show these files from the chosen evidence directory:
 What this proves: the starting application resolves dependencies and runs its
 sample input. It does not establish vulnerability exploitability.
 
-Implemented AWS insertion, pending live validation: CodeBuild builds the same
-source, ECR stores its runtime image and Inspector scans it. The local runner
-does not execute these services.
+AWS insertion: CodeBuild builds the same source and ECR stores its runtime
+image. Inspector scanning is optional and was skipped in the validated run.
+The local runner does not execute these services.
 
 ### 2. Show the constrained upgrade failure
 
@@ -147,7 +147,7 @@ raw and VEX-assisted results. Label `lightwell-woodstox-core.openvex` as a
 sample
 assertion. Never use its filtering effect as independent remediation proof.
 
-Implemented AWS insertion, pending live validation: compare Inspector scans of
+Optional AWS insertion, not yet live-validated: compare Inspector scans of
 baseline, conventional and Lightwell images by immutable digest. Confirm package
 coverage
 before interpreting absence of a finding. Preserve any remaining finding;
@@ -182,7 +182,7 @@ Local Maven build <-- Maven Central / Lightwell demo repositories
 Dependency checks + payment smoke check --> Local evidence
 ```
 
-The implemented AWS path, still awaiting live validation, is:
+The implemented AWS path, validated once with Inspector skipped, is:
 
 ```text
 CodeArtifact --> CodeBuild --> ECR --> Inspector findings
@@ -192,8 +192,8 @@ CodeArtifact --> CodeBuild --> ECR --> Inspector findings
                    S3 evidence              CloudWatch Logs
 ```
 
-CloudFormation and IAM provide the deployment definition and scoped roles.
-The files exist under `aws/`; no AWS resources have been created in this work.
+CloudFormation and IAM provide the deployment definition and roles. The files
+exist under `aws/`; the successful run created AWS resources.
 
 ### CodeArtifact delivery
 
@@ -211,15 +211,14 @@ in the source ZIP or evidence. Existing conflicting assets stop the build.
 
 ### Live acceptance gates
 
-1. Reproduce the locally tested runtime images inside CodeBuild and verify
-   CodeArtifact publication and downstream package identity.
+1. Reproduce the validated CodeBuild and CodeArtifact run in the target account.
 2. Establish Inspector coverage and actual target-CVE findings for each image.
    An unrecognised patch is a recorded integration gap, not a suppressed
 success.
 3. Reproduce builds in CodeBuild and execute the successful remediation images
    as one-shot Fargate tasks. Retain image digests, checks and runtime output.
 4. Exercise the included deployment and cleanup commands after account, Region
-   and service access are agreed. AWS account setup is deferred.
+   and service access are agreed. Cleanup remains unverified.
 
 Transform, Continuum, Security Hub and Audit Manager are later investigations.
 Neither this demo nor a collection of logs establishes SLSA conformance.
@@ -228,7 +227,7 @@ Migration acceleration and token savings need a separately measured pilot.
 ## Slide wording to align before presenting
 
 - **High Level Overview:** distinguish Lightwell repositories from CodeArtifact;
-  label explicit publication as implemented but not yet live-validated.
+  label explicit publication as validated once with Inspector skipped.
 - **Integrating Lightwell Updates:** distinguish artifact selection, build
   orchestration and scanning from automatic remediation generation.
 - **AWS + Red Hat Lightwell:** distinguish implemented paths from future

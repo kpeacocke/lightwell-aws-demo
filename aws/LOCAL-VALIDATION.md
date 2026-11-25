@@ -31,9 +31,10 @@ runtime packaging check, not a new CodeBuild run or CodeArtifact validation.
 The tests use mocked AWS responses and fake credentials. They do not prove that
 IAM policies are sufficient or that live services accept the complete workflow.
 
-## Still requires an AWS account
+## AWS validation
 
-CodeArtifact publication and resolution, CodeBuild execution, ECR push,
-Inspector coverage and Lightwell patch recognition, Fargate execution,
-CloudWatch delivery and deployment/cleanup acceptance remain unverified.
-No AWS resources were created as part of these checks.
+These local checks created no AWS resources. A subsequent live run passed
+CodeArtifact publication and resolution, CodeBuild scenarios, ECR push and
+Fargate execution with CloudWatch output in ap-southeast-1, with Inspector
+skipped. Inspector coverage, Lightwell patch recognition and stack cleanup
+remain unverified.

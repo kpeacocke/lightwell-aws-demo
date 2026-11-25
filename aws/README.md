@@ -5,8 +5,10 @@
 The deployment template and integration code are implemented. Three runtime
 containers have passed local Java 11 smoke checks with no network and a
 read-only filesystem. CloudFormation linting and offline failure-path tests
-pass. No AWS account has been used: live CodeArtifact publication, IAM access,
-CodeBuild execution, Inspector results and Fargate execution remain unverified.
+pass. On 25 November 2026, one run in ap-southeast-1 passed CodeArtifact
+publication, all scenarios, ECR image creation and both Fargate tasks with
+Inspector skipped. Inspector results, backport recognition and stack cleanup
+remain unverified. Results in other accounts are not guaranteed.
 
 ## What runs
 
@@ -98,7 +100,10 @@ for image pulls and logging; tasks receive public IPs but have no inbound
 security-group rules, application listener, load balancer or task IAM role.
 
 CodeBuild uses a privileged managed Linux image for Docker builds. Do not run
-untrusted pull-request code in this project. The runtime base can be pinned:
+untrusted pull-request code in this project. ECS does not support resource-level
+permissions for task-definition deregistration, so the build role may
+deregister any task definition in the selected Region; the demo only deregisters
+its own. The runtime base can be pinned:
 
 ```sh
 .venv/bin/python aws/demo.py deploy \

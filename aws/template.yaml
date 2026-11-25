@@ -188,7 +188,9 @@ Resources:
                 Resource: '*'
               - Effect: Allow
                 Action: [ecs:DeregisterTaskDefinition]
-                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
+                Resource: '*'
+                Condition:
+                  StringEquals: {'aws:RequestedRegion': !Ref AWS::Region}
               - Effect: Allow
                 Action: ecs:RunTask
                 Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
