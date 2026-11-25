@@ -95,15 +95,18 @@ class AdvisoryTests(unittest.TestCase):
             evidence = root / "evidence/aws"
 
             def build(*args: Any) -> dict[str, Any]:
+                del args
                 pipeline.write_json(evidence / "images.json", images)
                 return images
 
             def scan(*args: Any) -> dict[str, Any]:
+                del args
                 pipeline.write_json(evidence / "scan-comparison.json", scans)
                 (evidence / "lightwell-inspector.json").write_bytes(b"raw-sentinel")
                 return scans
 
             def command(*args: Any, **kwargs: Any) -> None:
+                del args, kwargs
                 pipeline.write_json(root / "evidence/run/results.json", report)
 
             with (

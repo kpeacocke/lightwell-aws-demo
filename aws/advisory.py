@@ -34,6 +34,7 @@ class NoRedirect(HTTPRedirectHandler):
         headers: HTTPMessage,
         newurl: str,
     ) -> None:
+        del req, fp, code, msg, headers, newurl
         return None
 
 
@@ -55,7 +56,8 @@ def advisory_claim(record: dict[str, Any]) -> dict[str, str]:
     """Require exact identity and consistent release metadata on the SAME entry."""
     if record.get("id") != ADVISORY or record.get("withdrawn"):
         return state("UNVERIFIED", "Unexpected or withdrawn advisory")
-    if CVE not in record.get("upstream", []):
+    upstream = record.get("upstream", [])
+    if not isinstance(upstream, list) or CVE not in upstream:
         return state("UNVERIFIED", "Target CVE absent from upstream field")
     for affected in record.get("affected", []):
         package = affected.get("package", {})
@@ -73,7 +75,12 @@ def advisory_claim(record: dict[str, Any]) -> dict[str, str]:
             r.get("type") == "ECOSYSTEM" and {"fixed": VERSION} in r.get("events", [])
             for r in ranges
         )
-        explicitly_affected = VERSION in affected.get("versions", [])
+        explicitly_affected = any(
+            VERSION in entry.get("versions", [])
+            for entry in record.get("affected", [])
+            if entry.get("package", {}).get("name") == PACKAGE
+            and entry.get("package", {}).get("ecosystem") == ECOSYSTEM
+        )
         if fixed and not explicitly_affected:
             return state(
                 "VERIFIED", "Exact vendor advisory claim matched; not binary proof"
@@ -179,6 +186,7 @@ def reconcile(scan_path: Path, images_path: Path, output: Path) -> dict[str, Any
         URLError,
         OSError,
         ValueError,
+        RecursionError,
         TypeError,
         AttributeError,
     ) as error:

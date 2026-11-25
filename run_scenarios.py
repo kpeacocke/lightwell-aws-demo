@@ -84,8 +84,7 @@ def render_report(report: Report) -> str:
         "These are build, dependency and sample-output checks,",
         "not CVE exploit tests or AWS scanner validation.",
         "",
-        "Upstream Enforcer exceptions are unchanged. "
-        "Target bytecode is Java 11;",
+        "Upstream Enforcer exceptions are unchanged. Target bytecode is Java 11;",
         "actual build/runtime versions are in `toolchain.txt`.",
     ]
     return "\n".join(lines) + "\n"
@@ -148,10 +147,10 @@ def run_scenario(
     logs.mkdir()
     shutil.copytree(ROOT / "source", project)
     shutil.copyfile(project / pom, project / "pom.xml")
-    settings = ROOT / "config" / (
-        "lightwell-settings.xml"
-        if name == "lightwell"
-        else "empty-settings.xml"
+    settings = (
+        ROOT
+        / "config"
+        / ("lightwell-settings.xml" if name == "lightwell" else "empty-settings.xml")
     )
     settings = settings_override or settings
     base = [
@@ -173,9 +172,7 @@ def run_scenario(
         "status": "FAIL",
     }
 
-    def run(
-        label: str, goals: List[str], cwd: Path = project
-    ) -> Tuple[int, str]:
+    def run(label: str, goals: List[str], cwd: Path = project) -> Tuple[int, str]:
         command = base + goals
         with (logs / f"{label}.log").open("w") as out:
             try:
@@ -191,9 +188,7 @@ def run_scenario(
             except subprocess.TimeoutExpired:
                 out.write("\nRUNNER TIMEOUT after 600 seconds\n")
                 code = 124
-        result["commands"].append(
-            {"label": label, "argv": command, "exit_code": code}
-        )
+        result["commands"].append({"label": label, "argv": command, "exit_code": code})
         return code, (logs / f"{label}.log").read_text()
 
     try:
@@ -216,9 +211,7 @@ def run_scenario(
         else:
             check_successful_build(result, run, cache, jackson, woodstox, code)
         result["status"] = (
-            "PASS"
-            if result["checks"] and all(result["checks"].values())
-            else "FAIL"
+            "PASS" if result["checks"] and all(result["checks"].values()) else "FAIL"
         )
     except Exception as error:
         result["error"] = str(error)
@@ -233,16 +226,11 @@ def main() -> int:
         required=True,
         help="Scratch location for fresh builds and Maven caches",
     )
-    parser.add_argument(
-        "--scenario", choices=["all", *SCENARIOS], default="all"
-    )
+    parser.add_argument("--scenario", choices=["all", *SCENARIOS], default="all")
     parser.add_argument(
         "--settings",
         type=Path,
-        help=(
-            "Optional Maven settings for all scenarios "
-            "(for CodeArtifact builds)"
-        ),
+        help=("Optional Maven settings for all scenarios (for CodeArtifact builds)"),
     )
     args = parser.parse_args()
     if args.settings:
@@ -299,9 +287,7 @@ def main() -> int:
             name, scenario, scratch, evidence, env, mvn, args.settings
         )
         report["scenarios"].append(result)
-        (evidence / "results.json").write_text(
-            json.dumps(report, indent=2) + "\n"
-        )
+        (evidence / "results.json").write_text(json.dumps(report, indent=2) + "\n")
         print(f"{name}: {result['status']}", flush=True)
     (evidence / "REPORT.md").write_text(render_report(report))
     print(f"Evidence: {evidence}", flush=True)
