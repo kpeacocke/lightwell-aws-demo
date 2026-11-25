@@ -179,6 +179,7 @@ def reconcile(scan_path: Path, images_path: Path, output: Path) -> dict[str, Any
         URLError,
         OSError,
         ValueError,
+        RecursionError,
         TypeError,
         AttributeError,
     ) as error:
