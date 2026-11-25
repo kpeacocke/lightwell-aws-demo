@@ -55,7 +55,8 @@ def advisory_claim(record: dict[str, Any]) -> dict[str, str]:
     """Require exact identity and consistent release metadata on the SAME entry."""
     if record.get("id") != ADVISORY or record.get("withdrawn"):
         return state("UNVERIFIED", "Unexpected or withdrawn advisory")
-    if CVE not in record.get("upstream", []):
+    upstream = record.get("upstream", [])
+    if not isinstance(upstream, list) or CVE not in upstream:
         return state("UNVERIFIED", "Target CVE absent from upstream field")
     for affected in record.get("affected", []):
         package = affected.get("package", {})
