@@ -415,6 +415,18 @@ class DemoTests(unittest.TestCase):
                 self.assertNotIn("secret", settings.read_text())
             evidence = json.loads((work / "codeartifact.json").read_text())
             self.assertTrue(evidence["reused_identical_package"])
+            self.assertEqual(
+                evidence["package_origin_restrictions"],
+                {"publish": "ALLOW", "upstream": "ALLOW"},
+            )
+            client.put_package_origin_configuration.assert_called_once_with(
+                domain="demo",
+                repository="repo",
+                format="maven",
+                namespace="com.fasterxml.woodstox",
+                package="woodstox-core",
+                restrictions={"publish": "ALLOW", "upstream": "ALLOW"},
+            )
 
     def test_codeartifact_conflicting_assets_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:

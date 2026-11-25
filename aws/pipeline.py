@@ -115,6 +115,14 @@ def prepare_codeartifact(client, work, evidence):
     directory = seed / "com/fasterxml/woodstox/woodstox-core" / PATCH
     jar = directory / f"woodstox-core-{PATCH}.jar"
     pom = directory / f"woodstox-core-{PATCH}.pom"
+    client.put_package_origin_configuration(
+        domain=domain,
+        repository=repo,
+        format="maven",
+        namespace="com.fasterxml.woodstox",
+        package="woodstox-core",
+        restrictions={"publish": "ALLOW", "upstream": "ALLOW"},
+    )
     existing = False
     try:
         remote_hashes = {}
@@ -161,6 +169,7 @@ def prepare_codeartifact(client, work, evidence):
             "package": f"com.fasterxml.woodstox:woodstox-core:{PATCH}",
             "vendor_jar_sha256": sha(jar),
             "vendor_pom_sha256": sha(pom),
+            "package_origin_restrictions": {"publish": "ALLOW", "upstream": "ALLOW"},
             "credential": "Environment reference only; token not retained",
         },
     )

@@ -30,6 +30,11 @@ resolution use a CodeArtifact mirror. The locally maintained security BOM is
 installed into the Lightwell build's fresh cache, as in Derek's demonstration.
 The downstream patch JAR must match the vendor JAR hash. Existing identical
 published artifacts are reused; conflicting content stops the build.
+The build configures origin controls for `com.fasterxml.woodstox:woodstox-core`
+to allow both direct publication and upstream ingestion, so Maven Central
+versions and the Lightwell patch can coexist. This increases dependency
+substitution risk; use a dedicated demo repository and review this setting before
+using the approach elsewhere. Package group restrictions can still block access.
 
 The baseline, conventional and Lightwell images share the same resolved base
 image digest. Runtime dependencies are copied into the images. Each is tested

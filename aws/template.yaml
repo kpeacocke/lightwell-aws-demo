@@ -173,7 +173,7 @@ Resources:
                 Action: [codeartifact:GetRepositoryEndpoint, codeartifact:ReadFromRepository]
                 Resource: !GetAtt Packages.Arn
               - Effect: Allow
-                Action: [codeartifact:PublishPackageVersion, codeartifact:PutPackageMetadata, codeartifact:GetPackageVersionAsset]
+                Action: [codeartifact:PublishPackageVersion, codeartifact:PutPackageMetadata, codeartifact:GetPackageVersionAsset, codeartifact:PutPackageOriginConfiguration]
                 Resource: !Sub 'arn:${AWS::Partition}:codeartifact:${AWS::Region}:${AWS::AccountId}:package/${DemoName}/demo-maven/maven/com.fasterxml.woodstox/woodstox-core'
               - Effect: Allow
                 Action: sts:GetServiceBearerToken
