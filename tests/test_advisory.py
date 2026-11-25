@@ -1,21 +1,27 @@
 """Offline adversarial checks: advisory metadata must never become a verdict."""
 
 import copy
+import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
+from email.message import Message
+from http.client import HTTPMessage
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError, URLError
+from urllib.request import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "aws"))
 import advisory  # noqa: E402
 import pipeline  # noqa: E402
 
 
-def record():
+def record() -> dict[str, Any]:
     # Synthetic minimal fixture, not a cached vendor/security attestation.
     return {
         "id": advisory.ADVISORY,
@@ -43,9 +49,9 @@ def record():
     }
 
 
-def inputs():
+def inputs() -> tuple[dict[str, Any], dict[str, Any]]:
     digest = "sha256:" + "a" * 64
-    finding = {
+    finding: dict[str, Any] = {
         "findingArn": "test-finding",
         "status": "ACTIVE",
         "packageVulnerabilityDetails": {
@@ -88,16 +94,16 @@ class AdvisoryTests(unittest.TestCase):
             root = Path(directory)
             evidence = root / "evidence/aws"
 
-            def build(*args):
+            def build(*args: Any) -> dict[str, Any]:
                 pipeline.write_json(evidence / "images.json", images)
                 return images
 
-            def scan(*args):
+            def scan(*args: Any) -> dict[str, Any]:
                 pipeline.write_json(evidence / "scan-comparison.json", scans)
                 (evidence / "lightwell-inspector.json").write_bytes(b"raw-sentinel")
                 return scans
 
-            def command(*args, **kwargs):
+            def command(*args: Any, **kwargs: Any) -> None:
                 pipeline.write_json(root / "evidence/run/results.json", report)
 
             with (
@@ -145,7 +151,7 @@ class AdvisoryTests(unittest.TestCase):
         self.assertEqual(advisory.advisory_claim(record())["state"], "VERIFIED")
 
     def test_wrong_or_missing_advisory_fields(self):
-        changes = [
+        changes: list[Callable[[dict[str, Any]], None]] = [
             lambda r: r.update(id="other"),
             lambda r: r.update(withdrawn="2026-01-01T00:00:00Z"),
             lambda r: r.update(upstream=[]),
@@ -199,7 +205,9 @@ class AdvisoryTests(unittest.TestCase):
                 advisory.inspector_match(scans, images)["state"], "UNAVAILABLE"
             )
 
-    def run_lookup(self, raw=None, error=None):
+    def run_lookup(
+        self, raw: bytes | None = None, error: Exception | None = None
+    ) -> tuple[dict[str, Any], Path]:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
@@ -235,10 +243,10 @@ class AdvisoryTests(unittest.TestCase):
         for error in (
             URLError("secret-sentinel"),
             TimeoutError("secret-sentinel"),
-            HTTPError(advisory.URL, 401, "secret-sentinel", {}, None),
-            HTTPError(advisory.URL, 404, "missing", {}, None),
-            HTTPError(advisory.URL, 429, "rate limited", {}, None),
-            HTTPError(advisory.URL, 500, "server", {}, None),
+            HTTPError(advisory.URL, 401, "secret-sentinel", Message(), None),
+            HTTPError(advisory.URL, 404, "missing", Message(), None),
+            HTTPError(advisory.URL, 429, "rate limited", Message(), None),
+            HTTPError(advisory.URL, 500, "server", Message(), None),
         ):
             result, _ = self.run_lookup(error=error)
             self.assertEqual(result["correlation"]["state"], "UNAVAILABLE")
@@ -265,6 +273,11 @@ class AdvisoryTests(unittest.TestCase):
                 advisory.fetch()
         self.assertIsNone(
             advisory.NoRedirect().redirect_request(
-                None, None, 302, "", {}, "https://example.com"
+                Request("https://example.com"),
+                io.BytesIO(),
+                302,
+                "",
+                HTTPMessage(),
+                "https://example.com",
             )
         )

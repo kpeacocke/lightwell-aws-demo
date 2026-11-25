@@ -1,9 +1,13 @@
 {
-  "name": "Lightwell demo (Java 11)",
+  "name": "Lightwell demo (Java 11, Python 3.13)",
   "build": {
     "dockerfile": "Dockerfile"
   },
   "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.13",
+      "installTools": false
+    },
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/aws-cli:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
@@ -13,7 +17,7 @@
     "${localWorkspaceFolder}/.env"
   ],
   "remoteUser": "vscode",
-  "postCreateCommand": "python3 -m venv .venv && .venv/bin/python -m pip install -r aws/requirements-dev.txt",
+  "postCreateCommand": "python3 -m venv --clear .venv && .venv/bin/python -m pip install -r aws/requirements-dev.txt",
   "postStartCommand": "if [ -z \"$AWS_PROFILE\" ]; then echo 'AWS_PROFILE is required in .env' >&2; exit 1; fi; aws configure set credential_process 'python3 \"${containerWorkspaceFolder}/.devcontainer/aws-credentials.py\"' --profile \"$AWS_PROFILE\"",
   "remoteEnv": {
     "PATH": "${containerWorkspaceFolder}/.venv/bin:${containerEnv:PATH}"

@@ -8,8 +8,9 @@ import hashlib
 import json
 import re
 from datetime import datetime, timezone
-from http.client import HTTPException
+from http.client import HTTPException, HTTPMessage
 from pathlib import Path
+from typing import IO, Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -24,7 +25,15 @@ MAX_BYTES = 1024 * 1024
 
 
 class NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(
+        self,
+        req: Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> None:
         return None
 
 
@@ -38,11 +47,11 @@ def fetch() -> bytes:
     return raw
 
 
-def state(status: str, reason: str) -> dict:
+def state(status: str, reason: str) -> dict[str, str]:
     return {"state": status, "reason": reason}
 
 
-def advisory_claim(record: dict) -> dict:
+def advisory_claim(record: dict[str, Any]) -> dict[str, str]:
     """Require exact identity and consistent release metadata on the SAME entry."""
     if record.get("id") != ADVISORY or record.get("withdrawn"):
         return state("UNVERIFIED", "Unexpected or withdrawn advisory")
@@ -72,7 +81,7 @@ def advisory_claim(record: dict) -> dict:
     return state("UNVERIFIED", "No consistent exact package/base/fixed-release match")
 
 
-def inspector_match(scans: dict, images: dict) -> dict:
+def inspector_match(scans: dict[str, Any], images: dict[str, Any]) -> dict[str, Any]:
     scan = scans.get("lightwell", {})
     if scan.get("interpretation") in ("SKIPPED", "INCONCLUSIVE") or not scan:
         return {
@@ -80,7 +89,7 @@ def inspector_match(scans: dict, images: dict) -> dict:
             "matches": [],
         }
     expected = images.get("lightwell", {}).get("digest")
-    matches = []
+    matches: list[dict[str, Any]] = []
     for finding in scan.get("target_findings", []):
         details = finding.get("packageVulnerabilityDetails", {})
         if details.get("vulnerabilityId") != CVE:
@@ -128,14 +137,17 @@ def inspector_match(scans: dict, images: dict) -> dict:
     }
 
 
-def reconcile(scan_path: Path, images_path: Path, output: Path) -> dict:
+def reconcile(scan_path: Path, images_path: Path, output: Path) -> dict[str, Any]:
     """Keep inputs byte-for-byte; write each lookup to a new directory."""
     scan_raw, images_raw = scan_path.read_bytes(), images_path.read_bytes()
-    scans, images = json.loads(scan_raw), json.loads(images_raw)
-    if not isinstance(scans, dict) or not isinstance(images, dict):
+    scans_value: object = json.loads(scan_raw)
+    images_value: object = json.loads(images_raw)
+    if not isinstance(scans_value, dict) or not isinstance(images_value, dict):
         raise ValueError("Expected scan-comparison and images JSON objects")
+    scans = cast(dict[str, Any], scans_value)
+    images = cast(dict[str, Any], images_value)
     output.mkdir(parents=True, exist_ok=False)
-    evidence = {
+    evidence: dict[str, Any] = {
         "schema_version": 1,
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
         "target": {"cve": CVE, "package": PACKAGE, "version": VERSION},
@@ -154,9 +166,10 @@ def reconcile(scan_path: Path, images_path: Path, output: Path) -> dict:
     try:
         raw = fetch()
         evidence["source"]["response_sha256"] = hashlib.sha256(raw).hexdigest()
-        record = json.loads(raw)
-        if not isinstance(record, dict):
+        record_value: object = json.loads(raw)
+        if not isinstance(record_value, dict):
             raise ValueError("invalid_record")
+        record = cast(dict[str, Any], record_value)
         evidence["lookup"] = state("VERIFIED", "Public OSV response retrieved")
         evidence["source"]["advisory_modified"] = record.get("modified")
         evidence["vendor_advisory_claim"] = advisory_claim(record)

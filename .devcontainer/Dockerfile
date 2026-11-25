@@ -7,7 +7,7 @@ ENV MAVEN_HOME=/opt/maven
 ENV PATH="${MAVEN_HOME}/bin:${PATH}"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        'python3=3.11.*' 'python3-venv=3.11.*' 'nodejs=18.*' 'npm=9.*' \
+        'nodejs=18.*' 'npm=9.*' \
     && npm install --global markdownlint-cli2@0.17.2 \
     && npm cache clean --force \
     && apt-get clean \
