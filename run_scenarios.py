@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Tuple
 
 if TYPE_CHECKING:
-    from typing import Dict, TypedDict
+    from typing import Callable, Dict, TypedDict
 
 ROOT = Path(__file__).resolve().parent
 SCENARIOS = {
@@ -84,10 +84,145 @@ def render_report(report: Report) -> str:
         "These are build, dependency and sample-output checks,",
         "not CVE exploit tests or AWS scanner validation.",
         "",
-        "Upstream Enforcer exceptions are unchanged. Target bytecode is Java 11;",
+        "Upstream Enforcer exceptions are unchanged. "
+        "Target bytecode is Java 11;",
         "actual build/runtime versions are in `toolchain.txt`.",
     ]
     return "\n".join(lines) + "\n"
+
+
+def check_successful_build(
+    result: ScenarioResult,
+    run: Callable[[str, List[str]], Tuple[int, str]],
+    cache: Path,
+    jackson: str,
+    woodstox: str,
+    code: int,
+) -> None:
+    result["checks"]["build_success"] = code == 0
+    if code:
+        raise RuntimeError("Build failed; inspect verify.log")
+    code, tree = run(
+        "dependency-tree",
+        ["org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree"],
+    )
+    result["checks"]["dependency_versions"] = code == 0 and all(
+        token in tree
+        for token in (
+            f"jackson-dataformat-xml:jar:{jackson}:compile",
+            f"woodstox-core:jar:{woodstox}:compile",
+        )
+    )
+    code, output = run("application", ["compile", "exec:java"])
+    result["checks"]["payment_output"] = code == 0 and all(
+        re.search(pattern, output)
+        for pattern in (
+            r"Transaction Id:\s*PX-1001",
+            r"Amount:\s*129\.99 USD",
+            r"Status:\s*APPROVED",
+        )
+    )
+    result["runtime_jars"] = {
+        str(p.relative_to(cache)): digest(p)
+        for p in sorted(cache.rglob("*.jar"))
+        if any(
+            s in str(p.relative_to(cache))
+            for s in ("com/fasterxml/", "org/codehaus/woodstox/")
+        )
+    }
+
+
+def run_scenario(
+    name: str,
+    scenario: Tuple[str, str, str],
+    scratch: Path,
+    evidence: Path,
+    env: Dict[str, str],
+    mvn: str,
+    settings_override: Path | None,
+) -> ScenarioResult:
+    pom, jackson, woodstox = scenario
+    project = scratch / name / "project"
+    cache = scratch / name / "m2"
+    logs = evidence / name
+    logs.mkdir()
+    shutil.copytree(ROOT / "source", project)
+    shutil.copyfile(project / pom, project / "pom.xml")
+    settings = ROOT / "config" / (
+        "lightwell-settings.xml"
+        if name == "lightwell"
+        else "empty-settings.xml"
+    )
+    settings = settings_override or settings
+    base = [
+        mvn,
+        "-B",
+        "-ntp",
+        "-s",
+        str(settings),
+        "-gs",
+        str(ROOT / "config/empty-settings.xml"),
+        f"-Dmaven.repo.local={cache}",
+        "-Dstyle.color=never",
+    ]
+    result: ScenarioResult = {
+        "name": name,
+        "pom": pom,
+        "commands": [],
+        "checks": {},
+        "status": "FAIL",
+    }
+
+    def run(
+        label: str, goals: List[str], cwd: Path = project
+    ) -> Tuple[int, str]:
+        command = base + goals
+        with (logs / f"{label}.log").open("w") as out:
+            try:
+                proc = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    env=env,
+                    stdout=out,
+                    stderr=subprocess.STDOUT,
+                    timeout=600,
+                )
+                code = proc.returncode
+            except subprocess.TimeoutExpired:
+                out.write("\nRUNNER TIMEOUT after 600 seconds\n")
+                code = 124
+        result["commands"].append(
+            {"label": label, "argv": command, "exit_code": code}
+        )
+        return code, (logs / f"{label}.log").read_text()
+
+    try:
+        if name == "lightwell":
+            code, _ = run(
+                "install-security-bom", ["install"], project / "packaging-pom"
+            )
+            result["checks"]["bom_installed"] = code == 0
+            if code:
+                raise RuntimeError("Security BOM installation failed")
+        code, build = run("verify", ["clean", "verify"])
+        if name == "pinned-failure":
+            result["checks"]["expected_convergence_failure"] = (
+                code not in (0, 124)
+                and "Dependency convergence error" in build
+                and "woodstox-core:jar:6.0.3" in build
+                and "woodstox-core:jar:6.4.0" in build
+                and "maven-enforcer-plugin" in build
+            )
+        else:
+            check_successful_build(result, run, cache, jackson, woodstox, code)
+        result["status"] = (
+            "PASS"
+            if result["checks"] and all(result["checks"].values())
+            else "FAIL"
+        )
+    except Exception as error:
+        result["error"] = str(error)
+    return result
 
 
 def main() -> int:
@@ -98,11 +233,16 @@ def main() -> int:
         required=True,
         help="Scratch location for fresh builds and Maven caches",
     )
-    parser.add_argument("--scenario", choices=["all", *SCENARIOS], default="all")
+    parser.add_argument(
+        "--scenario", choices=["all", *SCENARIOS], default="all"
+    )
     parser.add_argument(
         "--settings",
         type=Path,
-        help="Optional Maven settings for all scenarios (for CodeArtifact builds)",
+        help=(
+            "Optional Maven settings for all scenarios "
+            "(for CodeArtifact builds)"
+        ),
     )
     args = parser.parse_args()
     if args.settings:
@@ -151,126 +291,17 @@ def main() -> int:
     (evidence / "toolchain.txt").write_text(version.stdout + version.stderr)
     report["toolchain"] = version.stdout + version.stderr
 
-    for name, (pom, jackson, woodstox) in SCENARIOS.items():
+    for name, scenario in SCENARIOS.items():
         if args.scenario not in ("all", name):
             continue
         print(f"{name}: starting with an empty Maven cache", flush=True)
-        project = scratch / name / "project"
-        cache = scratch / name / "m2"
-        logs = evidence / name
-        logs.mkdir()
-        shutil.copytree(ROOT / "source", project)
-        shutil.copyfile(project / pom, project / "pom.xml")
-        settings = (
-            ROOT
-            / "config"
-            / (
-                "lightwell-settings.xml"
-                if name == "lightwell"
-                else "empty-settings.xml"
-            )
+        result = run_scenario(
+            name, scenario, scratch, evidence, env, mvn, args.settings
         )
-        settings = args.settings or settings
-        base = [
-            mvn,
-            "-B",
-            "-ntp",
-            "-s",
-            str(settings),
-            "-gs",
-            str(ROOT / "config/empty-settings.xml"),
-            f"-Dmaven.repo.local={cache}",
-            "-Dstyle.color=never",
-        ]
-        result: ScenarioResult = {
-            "name": name,
-            "pom": pom,
-            "commands": [],
-            "checks": {},
-            "status": "FAIL",
-        }
-
-        def run(label: str, goals: List[str], cwd: Path = project) -> Tuple[int, str]:
-            command = base + goals
-            with (logs / f"{label}.log").open("w") as out:
-                try:
-                    proc = subprocess.run(
-                        command,
-                        cwd=cwd,
-                        env=env,
-                        stdout=out,
-                        stderr=subprocess.STDOUT,
-                        timeout=600,
-                    )
-                    code = proc.returncode
-                except subprocess.TimeoutExpired:
-                    out.write("\nRUNNER TIMEOUT after 600 seconds\n")
-                    code = 124
-            result["commands"].append(
-                {"label": label, "argv": command, "exit_code": code}
-            )
-            return code, (logs / f"{label}.log").read_text()
-
-        try:
-            if name == "lightwell":
-                code, _ = run(
-                    "install-security-bom",
-                    ["install"],
-                    project / "packaging-pom",
-                )
-                result["checks"]["bom_installed"] = code == 0
-                if code:
-                    raise RuntimeError("Security BOM installation failed")
-            code, build = run("verify", ["clean", "verify"])
-            if name == "pinned-failure":
-                result["checks"]["expected_convergence_failure"] = (
-                    code not in (0, 124)
-                    and "Dependency convergence error" in build
-                    and "woodstox-core:jar:6.0.3" in build
-                    and "woodstox-core:jar:6.4.0" in build
-                    and "maven-enforcer-plugin" in build
-                )
-            else:
-                result["checks"]["build_success"] = code == 0
-                if code:
-                    raise RuntimeError("Build failed; inspect verify.log")
-                code, tree = run(
-                    "dependency-tree",
-                    ["org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree"],
-                )
-                result["checks"]["dependency_versions"] = code == 0 and all(
-                    token in tree
-                    for token in (
-                        f"jackson-dataformat-xml:jar:{jackson}:compile",
-                        f"woodstox-core:jar:{woodstox}:compile",
-                    )
-                )
-                code, output = run("application", ["compile", "exec:java"])
-                result["checks"]["payment_output"] = code == 0 and all(
-                    re.search(pattern, output)
-                    for pattern in (
-                        r"Transaction Id:\s*PX-1001",
-                        r"Amount:\s*129\.99 USD",
-                        r"Status:\s*APPROVED",
-                    )
-                )
-                result["runtime_jars"] = {
-                    str(p.relative_to(cache)): digest(p)
-                    for p in sorted(cache.rglob("*.jar"))
-                    if any(
-                        s in str(p.relative_to(cache))
-                        for s in ("com/fasterxml/", "org/codehaus/woodstox/")
-                    )
-                }
-            result["status"] = (
-                "PASS"
-                if result["checks"] and all(result["checks"].values())
-                else "FAIL"
-            )
-        except Exception as error:
-            result["error"] = str(error)
         report["scenarios"].append(result)
-        (evidence / "results.json").write_text(json.dumps(report, indent=2) + "\n")
+        (evidence / "results.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
         print(f"{name}: {result['status']}", flush=True)
     (evidence / "REPORT.md").write_text(render_report(report))
     print(f"Evidence: {evidence}", flush=True)
