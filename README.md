@@ -7,8 +7,8 @@ no AWS resources and does not require Docker.
 
 Prerequisites: Python 3, Maven, and a JDK capable of compiling Java 11. Internet
 access to Maven Central and Red Hat's public Lightwell demo Maven repositories
-is required. Maven and JDK versions are recorded with each run; they are not yet
-pinned by this package.
+is required. Maven and JDK versions are recorded with each run. The local
+workflow does not pin them.
 
 From this directory:
 
@@ -27,6 +27,23 @@ full command logs and toolchain information. The runner exits nonzero if any
 expected result fails. A failed pin is a PASS only if the log identifies the
 expected Woodstox 6.0.3 / 6.4.0 dependency-convergence failure; arbitrary
 network/build failures do not count as success.
+
+## Optional development container
+
+With Docker and the VS Code Dev Containers extension installed, open this folder
+and select **Dev Containers: Reopen in Container**. The container provides
+JDK 11, Maven 3.9.9 and Python 3; its base-image tag and Python packages can
+receive updates when rebuilt. It supports both x86-64 and ARM64 hosts.
+
+Run the same command inside the container, for example:
+
+```sh
+python3 run_scenarios.py --work-dir /tmp/lightwell-scratch
+```
+
+Evidence is written to the workspace as usual. Scratch data under `/tmp` is
+container-local and may be lost when the container is removed. Running the
+scenarios still requires network access to the Maven repositories.
 
 ## Scenarios
 
