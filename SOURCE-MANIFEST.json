@@ -2,7 +2,7 @@
   "repository": "https://github.com/derekwaters/parasol-payment-gateway",
   "commit": "d96ad5c736b543d9f288d509bae39d42aa9076bf",
   "sha256": {
-    "DEMOSCRIPT.md": "4186ef771dcf5ddbab39947a6595ed1ffcc58d3a3c16bb60097ff372a0cc9566",
+    "DEMOSCRIPT.md": "98de15acefaf6bcb5a8b68570515fb224d95b62c2726faa87fd45ef06f3c3717",
     "README.md": "4a77b6fe78f0a9d92a2ef1e62117f29c21d70ce76cf129d3ee5d4a1835637709",
     "lightwell-woodstox-core.openvex": "cf9552899866f8457e1a1ee9e0b2d3794f32ad6d31eebb9fa563724e41787fe3",
     "packaging-pom/pom.xml": "5ee9109aa60497ea6cc06d554b2a0f228fbd54f49f583861e82eb8706d991dbd",
@@ -16,7 +16,7 @@
   "local_adaptations": {
     "DEMOSCRIPT.md": {
       "upstream_sha256": "d875a58887792eb5f9973336d31555f36ee85561652a4ea631a7cd2e95ee9689",
-      "reason": "Markdown lint fixes, manual-run preparation and reset instructions, convergence and sample-VEX evidence limits, and mapping to the AWS slide deck with proposed integrations explicitly separated. Application and POM files unchanged."
+      "reason": "Markdown lint fixes, manual-run preparation and reset instructions, convergence and sample-VEX evidence limits, and mapping to the AWS slide deck with proposed integrations explicitly separated. Application and POM files unchanged. AWS paths now described as implemented but awaiting live validation."
     },
     "README.md": {
       "upstream_sha256": "fcb8ddf438124f6ec5055912d8b482d940066218f282f73629f6d38aa401ce5d",

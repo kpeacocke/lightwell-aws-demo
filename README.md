@@ -1,7 +1,9 @@
 # Lightwell AWS demo — local validation package
 
-This first increment reproduces Derek Waters' four Maven scenarios. It creates
-no AWS resources and does not require Docker.
+This package reproduces Derek Waters' four Maven scenarios locally and includes
+an AWS integration for CodeArtifact, CodeBuild, ECR/Inspector and Fargate.
+The local runner creates no AWS resources and does not require Docker.
+AWS deployment is separate and has not yet been validated in a live account.
 
 ## Presenting with the AWS slide deck
 
@@ -9,11 +11,15 @@ Use [DEMO.md](DEMO.md) for the deck-aligned presenter flow, evidence locations,
 AWS architecture status and next validation gates. Insert the demonstration
 immediately after **Integrating Lightwell Updates**.
 
-The working demo demonstrates targeted dependency replacement and sample
-execution. The wider AWS workflow is proposed: CodeBuild, ECR/Inspector and
-Fargate come next. CodeArtifact delivery is a separate integration investigation;
-Transform and Continuum are later exercises. No AWS service is invoked by the
-local runner.
+The local demo demonstrates targeted dependency replacement and sample
+execution. The AWS code now implements explicit CodeArtifact patch publication,
+four CodeBuild scenarios, three ECR images, Inspector evidence collection and
+two Fargate tasks. These AWS paths are implemented but live-unverified.
+Transform and Continuum remain future exercises.
+
+Use [the AWS setup guide](aws/README.md) to package, deploy, run and clean up.
+See [local integration validation](aws/LOCAL-VALIDATION.md) for checks completed
+without an AWS account. Do not describe those checks as an AWS deployment.
 
 The four strategic wins in the deck are hypotheses for a customer POC, not
 measured results of this example. Do not present sample VEX filtering as
@@ -44,12 +50,47 @@ expected result fails. A failed pin is a PASS only if the log identifies the
 expected Woodstox 6.0.3 / 6.4.0 dependency-convergence failure; arbitrary
 network/build failures do not count as success.
 
+To route all scenarios through a configured Maven repository, the AWS pipeline
+passes `--settings /path/to/settings.xml`. The normal local command retains its
+original direct-repository settings. The override is recorded in command logs;
+credentials must be environment references, never literal values in the file.
+
 ## Optional development container
 
 With Docker and the VS Code Dev Containers extension installed, open this folder
 and select **Dev Containers: Reopen in Container**. The container provides
-JDK 11, Maven 3.9.9 and Python 3; its base-image tag and Python packages can
-receive updates when rebuilt. It supports both x86-64 and ARM64 hosts.
+JDK 11, Maven 3.9.9, Python 3, AWS CLI and Docker CLI. On creation it installs
+`aws/requirements-dev.txt` into the workspace `.venv`; Ruff and cfn-lint are
+available on the terminal PATH. It also installs markdownlint-cli2 0.17.2,
+Hadolint 2.15.1 and the Python and Ruff VS Code extensions. VS Code defaults to
+the `.venv` interpreter; if an interpreter was already selected, choose `.venv` using
+**Python: Select Interpreter**. Rebuild the container after changing its
+configuration; rerun `.venv/bin/python -m pip install -r aws/requirements-dev.txt`
+after changing the requirements. The base image and dev container features can
+receive updates when rebuilt.
+
+Docker commands use the host Docker engine and require it to be running. Socket
+access grants powerful control over the host; use a trusted workspace. The
+container and host must use the same architecture. For rootless Docker or
+workspace bind mounts, see the
+[Docker-outside-of-Docker feature documentation](https://github.com/devcontainers/features/blob/main/src/docker-outside-of-docker/README.md).
+To provide local AWS credentials, copy `.env.example` to `.env` before opening
+or rebuilding the container, then fill in the allocated access key, secret key
+region and `AWS_PROFILE` (for example, `lightwell`). Add `AWS_SESSION_TOKEN` as
+well when using temporary credentials.
+The devcontainer passes these values into the container as environment
+variables and configures the named AWS profile on startup. The profile
+reads the environment credentials without copying them into the AWS
+credentials file. AWS CLI and the sample use `AWS_PROFILE` by default. Verify
+with `aws sts get-caller-identity` or
+`aws sts get-caller-identity --profile "$AWS_PROFILE"`. Rebuild the container
+after changing `.env` or the container configuration. An existing profile with
+saved credentials can override the environment-backed provider;
+remove those saved credentials if they should not be used.
+The `.env` file is gitignored. Do not commit credentials or bake them into the
+image; environment variables are available to processes running in the
+container, so use credentials intended for local development and least
+privilege.
 
 Run the same command inside the container, for example:
 
@@ -106,14 +147,28 @@ regression, Inspector backport recognition, AWS execution or Java 11 runtime
 compatibility is certified by these checks. Do not describe a successful build
 as proof that the CVE is fixed.
 
-## Next increment
+## AWS integration and validation
 
-After local scenarios pass: package actual runtime dependencies into three
-consistent images; verify execution without dependency downloads; then use
-ECR/Inspector to establish scan coverage and actual findings. Add CodeBuild,
-Fargate and CloudFormation only after that evidence is understood. AWS account
-configuration is intentionally deferred. The acceptance gates and the separate
-CodeArtifact investigation are described in [DEMO.md](DEMO.md).
+The integration is implemented under `aws/`. It must be deployed and rehearsed
+in an approved AWS account before presenting live results. The setup guide
+covers required permissions, Inspector enablement, artifact publication,
+evidence, costs and cleanup. The package does not enforce a monetary cap.
+
+Local validation includes three Java 11 runtime containers with networking
+disabled and a read-only filesystem. This supplements the original build
+validation; it does not establish Inspector recognition or AWS IAM correctness.
+
+Run the offline checks after installing `aws/requirements-dev.txt` (already
+installed in the development container):
+
+```sh
+ruff check .
+ruff format --check .
+python3 -m unittest discover -s tests -v
+cfn-lint aws/template.yaml
+markdownlint-cli2 "**/*.md"
+hadolint .devcontainer/Dockerfile
+```
 
 ## Cleanup
 

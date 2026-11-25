@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lightwell demo - CodeArtifact, CodeBuild, ECR and one-shot Fargate
+Parameters:
+  DemoName:
+    Type: String
+    Default: lightwell-demo
+    AllowedPattern: '[a-z][a-z0-9-]{2,30}'
+  RuntimeBase:
+    Type: String
+    Default: public.ecr.aws/amazoncorretto/amazoncorretto:11
+    Description: Runtime image; replace with an approved digest for repeatable releases
+Resources:
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireDemoArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub '${EvidenceBucket.Arn}/*'
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  Domain:
+    Type: AWS::CodeArtifact::Domain
+    Properties: {DomainName: !Ref DemoName}
+  Packages:
+    Type: AWS::CodeArtifact::Repository
+    Properties:
+      DomainName: !GetAtt Domain.Name
+      RepositoryName: demo-maven
+      ExternalConnections: [public:maven-central]
+  Images:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref DemoName
+      ImageTagMutability: IMMUTABLE
+      EmptyOnDelete: true
+      EncryptionConfiguration: {EncryptionType: AES256}
+  BuildLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/codebuild/${DemoName}'
+      RetentionInDays: 14
+  TaskLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${DemoName}'
+      RetentionInDays: 14
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.83.0.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  Gateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref Gateway}
+  Subnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.83.0.0/25
+      MapPublicIpOnLaunch: false
+  Routes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  InternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref Routes
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Gateway
+  Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {RouteTableId: !Ref Routes, SubnetId: !Ref Subnet}
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: No inbound traffic; HTTPS egress for ECR and logs
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties: {ClusterName: !Ref DemoName}
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullDemoAndWriteLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:GetDownloadUrlForLayer, ecr:BatchGetImage]
+                Resource: !GetAtt Images.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt TaskLogs.Arn
+  BuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: codebuild.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DemoPipeline
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject]
+                Resource: !Sub '${EvidenceBucket.Arn}/*'
+              - Effect: Allow
+                Action: [s3:GetBucketLocation, s3:ListBucket]
+                Resource: !GetAtt EvidenceBucket.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt BuildLogs.Arn
+              - Effect: Allow
+                Action: logs:GetLogEvents
+                Resource: !GetAtt TaskLogs.Arn
+              - Effect: Allow
+                Action: [ecr:GetAuthorizationToken, ecr:GetRegistryScanningConfiguration]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:DescribeImages, ecr:DescribeImageScanFindings]
+                Resource: !GetAtt Images.Arn
+              - Effect: Allow
+                Action: [codeartifact:GetAuthorizationToken]
+                Resource: !GetAtt Domain.Arn
+              - Effect: Allow
+                Action: [codeartifact:GetRepositoryEndpoint, codeartifact:ReadFromRepository]
+                Resource: !GetAtt Packages.Arn
+              - Effect: Allow
+                Action: [codeartifact:PublishPackageVersion, codeartifact:PutPackageMetadata, codeartifact:GetPackageVersionAsset]
+                Resource: !Sub 'arn:${AWS::Partition}:codeartifact:${AWS::Region}:${AWS::AccountId}:package/${DemoName}/demo-maven/maven/com.fasterxml.woodstox/woodstox-core'
+              - Effect: Allow
+                Action: sts:GetServiceBearerToken
+                Resource: '*'
+                Condition:
+                  StringEquals: {'sts:AWSServiceName': codeartifact.amazonaws.com}
+              - Effect: Allow
+                Action: [inspector2:ListCoverage, inspector2:ListFindings]
+                Resource: '*'
+              - Effect: Allow
+                Action: ecs:RegisterTaskDefinition
+                Resource: '*'
+              - Effect: Allow
+                Action: [ecs:DeregisterTaskDefinition]
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
+                Condition:
+                  ArnEquals: {'ecs:cluster': !GetAtt Cluster.Arn}
+              - Effect: Allow
+                Action: [ecs:DescribeTasks, ecs:StopTask]
+                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${Cluster}/*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt ExecutionRole.Arn
+                Condition:
+                  StringEquals: {'iam:PassedToService': ecs-tasks.amazonaws.com}
+  Build:
+    Type: AWS::CodeBuild::Project
+    DependsOn: [InternetRoute, Association]
+    Properties:
+      Name: !Ref DemoName
+      ServiceRole: !GetAtt BuildRole.Arn
+      TimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 10
+      ConcurrentBuildLimit: 1
+      Source:
+        Type: S3
+        Location: !Sub '${EvidenceBucket}/source/bootstrap.zip'
+        BuildSpec: aws/buildspec.yml
+      Artifacts:
+        Type: S3
+        Location: !Ref EvidenceBucket
+        Path: builds
+        NamespaceType: BUILD_ID
+        Name: evidence
+        Packaging: ZIP
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - {Name: DEMO_NAME, Value: !Ref DemoName}
+          - {Name: ECR_REPOSITORY, Value: !Ref Images}
+          - {Name: ECR_URI, Value: !GetAtt Images.RepositoryUri}
+          - {Name: CA_DOMAIN, Value: !GetAtt Domain.Name}
+          - {Name: CA_REPOSITORY, Value: !GetAtt Packages.Name}
+          - {Name: ECS_CLUSTER, Value: !Ref Cluster}
+          - {Name: TASK_SUBNET, Value: !Ref Subnet}
+          - {Name: TASK_SECURITY_GROUP, Value: !Ref TaskSecurityGroup}
+          - {Name: TASK_EXECUTION_ROLE, Value: !GetAtt ExecutionRole.Arn}
+          - {Name: TASK_LOG_GROUP, Value: !Ref TaskLogs}
+          - {Name: RUNTIME_BASE, Value: !Ref RuntimeBase}
+      LogsConfig:
+        CloudWatchLogs: {Status: ENABLED, GroupName: !Ref BuildLogs}
+Outputs:
+  Bucket: {Value: !Ref EvidenceBucket}
+  Project: {Value: !Ref Build}
+  Repository: {Value: !Ref Images}
+  Domain: {Value: !GetAtt Domain.Name}
+  PackageRepository: {Value: !GetAtt Packages.Name}
+  Cluster: {Value: !Ref Cluster}
+  BuildLogGroup: {Value: !Ref BuildLogs}
+  TaskLogGroup: {Value: !Ref TaskLogs}

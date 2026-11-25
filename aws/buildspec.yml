@@ -1,0 +1,15 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+      python: '3.11'
+    commands:
+      - python3 -m pip install -r aws/requirements.txt
+  build:
+    commands:
+      - python3 aws/pipeline.py
+artifacts:
+  base-directory: evidence
+  files:
+    - '**/*'

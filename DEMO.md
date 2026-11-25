@@ -4,8 +4,9 @@
 
 Present this demonstration immediately after **Integrating Lightwell Updates**.
 It provides one concrete Java example behind the broader AWS and Lightwell
-architecture. The current release is a local demonstration; AWS integrations
-are proposed work, not live features of this package.
+architecture. The local demonstration is validated. AWS integration code is now
+implemented,
+but must be deployed and rehearsed before it can be presented as live.
 
 Opening statement:
 
@@ -23,14 +24,24 @@ Opening statement:
   2026 using Maven 3.10.2 and Java 27, targeting Java 11 bytecode.
 - **Manual extension:** Derek's Trivy and sample-VEX sequence. The automated
   runner does not perform these scans.
-- **Proposed:** CodeBuild, ECR/Inspector and Fargate integration; CodeArtifact
-  distribution investigation; later Transform and Continuum exercises.
+- **Implemented, live-unverified:** CodeArtifact publication, CodeBuild,
+  ECR/Inspector and Fargate integration. See [AWS setup](aws/README.md).
+- **Future:** Transform and Continuum exercises.
 - **Not established:** general compatibility, exploit remediation, migration
   acceleration, token savings, SLSA conformance or native Lightwell integration
   with any AWS service.
 
 The optional development container provides a different toolchain. Show the
-actual run's `toolchain.txt`; do not attribute old evidence to a new environment.
+actual run's `toolchain.txt`; do not attribute old evidence to a new
+environment.
+
+## Choose local or AWS execution
+
+For the AWS presentation, follow [aws/README.md](aws/README.md): deploy the
+stack, configure Inspector, publish the source package and start CodeBuild.
+Use the real build ID, image digests, findings and task output in the sequence
+below. The local command is a rehearsal of the Maven scenarios, not a substitute
+for AWS evidence. See [local checks](aws/LOCAL-VALIDATION.md) for the boundary.
 
 ## Prepare before presenting
 
@@ -72,8 +83,9 @@ payment service. Show these files from the chosen evidence directory:
 What this proves: the starting application resolves dependencies and runs its
 sample input. It does not establish vulnerability exploitability.
 
-Proposed AWS insertion: CodeBuild builds the same source; an ECR image contains
-its runtime JARs; Inspector scans the image. None is executed by this package.
+Implemented AWS insertion, pending live validation: CodeBuild builds the same
+source, ECR stores its runtime image and Inspector scans it. The local runner
+does not execute these services.
 
 ### 2. Show the constrained upgrade failure
 
@@ -111,13 +123,16 @@ Show `source/pom_3_lightwell.xml`, `source/packaging-pom/pom.xml` and
 build, dependency-tree and application logs.
 
 What this proves: a build can retrieve the patched Woodstox artifact, retain
-Jackson 2.10.2 and pass the same sample-output check. In the recorded comparison,
+Jackson 2.10.2 and pass the same sample-output check. In the recorded
+comparison,
 only Woodstox's resolved version changes from baseline. The application source
 is unchanged. Compatibility beyond this sample remains untested.
 
-The dependency source is Red Hat's public demo Maven repositories, accessed
-directly. This demonstration does not route packages through CodeArtifact.
-Derek's recording additionally demonstrates Artifactory configuration.
+Local execution retrieves the patch directly from Red Hat's demo repositories.
+The AWS pipeline explicitly publishes that patch to CodeArtifact, then resolves
+all scenario dependencies through CodeArtifact. It checks that the downstream
+patch hash matches the vendor bytes. This is custom publication code, not an
+Artifactory-style proxy or a claimed native Lightwell service integration.
 
 ### 5. Explain the security evidence boundary
 
@@ -128,13 +143,15 @@ version. Hashes identify downloaded bytes; they do not authenticate a vendor
 advisory or prove a security fix.
 
 If presenting Trivy, preflight the manual sequence separately and retain both
-raw and VEX-assisted results. Label `lightwell-woodstox-core.openvex` as a sample
+raw and VEX-assisted results. Label `lightwell-woodstox-core.openvex` as a
+sample
 assertion. Never use its filtering effect as independent remediation proof.
 
-Proposed AWS insertion: compare completed Inspector scans of the baseline,
-conventional and Lightwell images by immutable digest. Confirm package coverage
+Implemented AWS insertion, pending live validation: compare Inspector scans of
+baseline, conventional and Lightwell images by immutable digest. Confirm package
+coverage
 before interpreting absence of a finding. Preserve any remaining finding;
-automatic suppression is not part of the proposed first release.
+automatic suppression is not implemented.
 
 ### 6. Close with a bounded AWS validation proposal
 
@@ -153,7 +170,7 @@ Do not report the four strategic wins as measured outcomes of this toy example.
 
 ## AWS architecture status
 
-The implementation today is:
+The validated local execution path is:
 
 ```text
 Pinned application + scenario POM
@@ -165,45 +182,44 @@ Local Maven build <-- Maven Central / Lightwell demo repositories
 Dependency checks + payment smoke check --> Local evidence
 ```
 
-The proposed first AWS increment is:
+The implemented AWS path, still awaiting live validation, is:
 
 ```text
-Same scenarios --> CodeBuild --> ECR --> Inspector findings
+CodeArtifact --> CodeBuild --> ECR --> Inspector findings
                        |          |
                        |          +--> One-shot ECS/Fargate execution
                        v                         |
                    S3 evidence              CloudWatch Logs
 ```
 
-CloudFormation and IAM would provide reproducible setup and scoped access.
-This architecture is a plan; no AWS deployment files or resources exist here.
+CloudFormation and IAM provide the deployment definition and scoped roles.
+The files exist under `aws/`; no AWS resources have been created in this work.
 
-### CodeArtifact decision
+### CodeArtifact delivery
 
-The deck places CodeArtifact prominently in package delivery. Label that arrow
-**proposed integration** and keep the Lightwell source repositories distinct
-from the customer's CodeArtifact repository.
+The deck's CodeArtifact arrow now has an implemented custom publication path.
+The pipeline retrieves one exact demo patch from Red Hat and publishes its JAR
+and POM to CodeArtifact. Maven Central supplies standard upstream dependencies.
+All scenario builds use the resulting CodeArtifact repository as a mirror.
 
-[CodeArtifact external connections][codeartifact] list supported public
-repositories; Lightwell is not listed. Do not assume an arbitrary remote proxy
-connection works like Artifactory. An approved publication or synchronisation
-path needs its own validation of permissions, exact package coordinates,
-checksums, metadata, provenance and reproducible downstream resolution.
+This is not an arbitrary remote proxy. The supported [external
+connections][codeartifact] do not list Lightwell. Confirm publication permission
+and validate
+this path in the target account before describing it as demonstrated.
+The downstream patch must match the vendor checksum; credentials are not saved
+in the source ZIP or evidence. Existing conflicting assets stop the build.
 
-Keep that investigation separate from the first AWS execution demonstration.
-If the deck must claim delivery through CodeArtifact, complete that work before
-presenting the arrow as implemented.
+### Live acceptance gates
 
-### Acceptance gates for the next increment
-
-1. Package the three successful scenarios with their actual runtime JARs and
-   verify execution without dependency downloads at startup.
+1. Reproduce the locally tested runtime images inside CodeBuild and verify
+   CodeArtifact publication and downstream package identity.
 2. Establish Inspector coverage and actual target-CVE findings for each image.
-   An unrecognised patch is a recorded integration gap, not a suppressed success.
+   An unrecognised patch is a recorded integration gap, not a suppressed
+success.
 3. Reproduce builds in CodeBuild and execute the successful remediation images
    as one-shot Fargate tasks. Retain image digests, checks and runtime output.
-4. Add deployment and cleanup automation after the account, Region and service
-   access are agreed. AWS account setup is deferred.
+4. Exercise the included deployment and cleanup commands after account, Region
+   and service access are agreed. AWS account setup is deferred.
 
 Transform, Continuum, Security Hub and Audit Manager are later investigations.
 Neither this demo nor a collection of logs establishes SLSA conformance.
@@ -212,10 +228,11 @@ Migration acceleration and token savings need a separately measured pilot.
 ## Slide wording to align before presenting
 
 - **High Level Overview:** distinguish Lightwell repositories from CodeArtifact;
-  label the proposed distribution boundary.
+  label explicit publication as implemented but not yet live-validated.
 - **Integrating Lightwell Updates:** distinguish artifact selection, build
   orchestration and scanning from automatic remediation generation.
-- **AWS + Red Hat Lightwell:** label the end-to-end workflow as a target design;
+- **AWS + Red Hat Lightwell:** distinguish implemented paths from future
+integrations;
   do not promise patch recognition, exploit validation or automatic suppression.
 - **Four Strategic Wins:** describe benefits as hypotheses for joint validation;
   request authoritative product evidence for any provenance-level claim.

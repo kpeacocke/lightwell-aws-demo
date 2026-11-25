@@ -25,16 +25,18 @@ retain Derek's manual build and scanner flow; they do not execute AWS services.
 - **Integrating Lightwell Updates:** compare the failed direct pin, conventional
   upgrade and Lightwell BOM path using the same sample-output checks.
 - **Securing with Lightwell:** identify direct Maven access to Red Hat's demo
-  repositories. CodeArtifact delivery remains a proposed integration.
+  repositories for local runs. The AWS path publishes the patch to CodeArtifact
+  explicitly; its implementation is awaiting live validation.
 - **Validate, Deliver:** distinguish raw scanner findings, sample-VEX filtering
   and the future Inspector image comparison. A successful build is not a
   security-fix attestation.
 - **Four Strategic Wins:** close with a one-application AWS POC proposal, not
   claims of proven migration acceleration, token savings or SLSA conformance.
 
-In the proposed AWS extension, CodeBuild runs the scenarios, ECR stores images,
-Inspector scans them and Fargate runs the sample. Keep Transform and Continuum
-as later exercises. The current automated runner only validates local builds.
+The implemented AWS extension uses CodeBuild, ECR, Inspector and Fargate; see
+[the AWS setup guide](../aws/README.md). These paths still require a live account
+rehearsal. Keep Transform and Continuum as later exercises. The local automated
+runner validates Maven builds; `aws/pipeline.py` coordinates AWS execution.
 
 ## Demo Preparation
 

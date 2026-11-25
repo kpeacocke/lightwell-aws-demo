@@ -1,0 +1,48 @@
+{
+  "base": "public.ecr.aws/amazoncorretto/amazoncorretto@sha256:dfd0612d850e01d249b181a9c0af97858256ebbe7b57488d37927460177cfff1",
+  "platform": "linux/amd64",
+  "scenarios": {
+    "baseline": {
+      "status": "PASS",
+      "output": "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested\n\n\nPayment Gateway Initialised\n\n\nPAYMENT:\n\tTransaction Id: PX-1001\n\tAmount: 129.99 USD\n\tStatus: APPROVED\n\n",
+      "runtime_jars": {
+        "jakarta.xml.bind-api-2.3.2.jar": "69156304079bdeed9fc0ae3b39389f19b3cc4ba4443bc80508995394ead742ea",
+        "jackson-core-2.10.2.jar": "4c41f22a48f6ebb28752baeb6d25bf09ba4ff0ad8bfb82650dde448928b9da4f",
+        "woodstox-core-6.0.3.jar": "4424abea4c83d2086282e50629de1f8cbe3caea72dcb45fec2d008ded3ad8f5f",
+        "jakarta.activation-api-1.2.1.jar": "8b0a0f52fa8b05c5431921a063ed866efaa41dadf2e3a7ee3e1961f2b0d9645b",
+        "stax2-api-4.2.jar": "badf6081a0bb526fd2c01951dfefad91b6846b6dd0eb0048587e30d1dd334e68",
+        "jackson-module-jaxb-annotations-2.10.2.jar": "ff87dcb6d1beddf4458127380ee2fb3504463a7f20420d66baa1590a65c15d33",
+        "jackson-databind-2.10.2.jar": "42c25644e35fadfbded1b7f35a8d1e70a86737f190e43aa2c56cea4b96cbda88",
+        "jackson-annotations-2.10.2.jar": "8c3cba89bf3e03b35a0e6f892c2eb17ed8fdde2e214c3a4c18703d63796bae46",
+        "jackson-dataformat-xml-2.10.2.jar": "19bbf6fc23581aa2933dbbea2b66039c8c9e00deedbfcfb6f7d1ccfbf0bbd36e"
+      }
+    },
+    "conventional": {
+      "status": "PASS",
+      "output": "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested\n\n\nPayment Gateway Initialised\n\n\nPAYMENT:\n\tTransaction Id: PX-1001\n\tAmount: 129.99 USD\n\tStatus: APPROVED\n\n",
+      "runtime_jars": {
+        "jackson-core-2.13.5.jar": "48f36a025311d0464ad8dda4512a20c79e279a9550f63f3179d731d94482474b",
+        "woodstox-core-6.4.0.jar": "d6eb9f2f40049a7a808baf11ffba0737648e62ff52fde9271d808e5d57a27279",
+        "stax2-api-4.2.1.jar": "678567e48b51a42c65c699f266539ad3d676d4b1a5b0ad7d89ece8b9d5772579",
+        "jackson-databind-2.13.5.jar": "5fedb24b2356491815d18267f65da9a21dd67413345ad7795f221afa25c78984",
+        "jackson-annotations-2.13.5.jar": "80aea8ed7232db5040ced4b3f982f29da95bb3d802343dbf6fd82ccd98c21c4f",
+        "jackson-dataformat-xml-2.13.5.jar": "5766a9d543a9b2e163711de50ba7b083125ee24ed920947d2fe1b5fa17608f4d"
+      }
+    },
+    "lightwell": {
+      "status": "PASS",
+      "output": "WARNING: The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8) and no specific platform was requested\n\n\nPayment Gateway Initialised\n\n\nPAYMENT:\n\tTransaction Id: PX-1001\n\tAmount: 129.99 USD\n\tStatus: APPROVED\n\n",
+      "runtime_jars": {
+        "jakarta.xml.bind-api-2.3.2.jar": "69156304079bdeed9fc0ae3b39389f19b3cc4ba4443bc80508995394ead742ea",
+        "jackson-core-2.10.2.jar": "4c41f22a48f6ebb28752baeb6d25bf09ba4ff0ad8bfb82650dde448928b9da4f",
+        "woodstox-core-6.0.3.rhlw-00001.jar": "45a6d86df90579c6d6c0377cca25f5c957e327d43f5f36c00b60a99cc89b57ce",
+        "jakarta.activation-api-1.2.1.jar": "8b0a0f52fa8b05c5431921a063ed866efaa41dadf2e3a7ee3e1961f2b0d9645b",
+        "stax2-api-4.2.jar": "badf6081a0bb526fd2c01951dfefad91b6846b6dd0eb0048587e30d1dd334e68",
+        "jackson-module-jaxb-annotations-2.10.2.jar": "ff87dcb6d1beddf4458127380ee2fb3504463a7f20420d66baa1590a65c15d33",
+        "jackson-databind-2.10.2.jar": "42c25644e35fadfbded1b7f35a8d1e70a86737f190e43aa2c56cea4b96cbda88",
+        "jackson-annotations-2.10.2.jar": "8c3cba89bf3e03b35a0e6f892c2eb17ed8fdde2e214c3a4c18703d63796bae46",
+        "jackson-dataformat-xml-2.10.2.jar": "19bbf6fc23581aa2933dbbea2b66039c8c9e00deedbfcfb6f7d1ccfbf0bbd36e"
+      }
+    }
+  }
+}
