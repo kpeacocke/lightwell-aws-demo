@@ -5,12 +5,16 @@
 The deployment template and integration code are implemented. Three runtime
 containers have passed local Java 11 smoke checks with no network and a
 read-only filesystem. CloudFormation linting and offline failure-path tests
-pass. On 25 November 2026, one run in ap-southeast-1 passed CodeArtifact
-publication, all scenarios, ECR image creation and both Fargate tasks with
-Inspector skipped. That run preceded the current networking, encryption and
-logging changes, which have not been deployed and need live validation.
-Inspector results, backport recognition and stack cleanup remain unverified.
-Results in other accounts are not guaranteed.
+pass. On 25 November 2026, a run in ap-southeast-1 reused an identical
+previously published CodeArtifact package and passed dependency resolution,
+all scenarios, ECR image creation and both Fargate tasks with Inspector
+skipped. The stack had been updated to the current private
+networking, log encryption and S3 access logging configuration. The build was
+`lightwell-demo:3247b2cc-0859-4cc7-8b27-317b6fd79f1c` (06:24-06:29 UTC),
+using repository revision `7dc34b6`. Its outcome was
+`INTEGRATION_PASS_INSPECTOR_SKIPPED`. Inspector results, backport recognition
+and stack cleanup remain unverified. Results in other accounts are not
+guaranteed.
 
 ## What runs
 
@@ -230,7 +234,8 @@ An integration success is labelled
 Without Inspector, success is labelled `INTEGRATION_PASS_INSPECTOR_SKIPPED`;
 it is not evidence that images are clean or a vulnerability is fixed.
 CloudFormation schema and mocked SDK checks cannot prove service permissions or
-runtime behaviour. Live acceptance in the target account is still required.
+runtime behaviour. The recorded live run confirms only the exercised path in
+that account; live acceptance in the target account is still required.
 
 ## Cleanup
 

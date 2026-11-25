@@ -26,7 +26,7 @@ retain Derek's manual build and scanner flow; they do not execute AWS services.
   upgrade and Lightwell BOM path using the same sample-output checks.
 - **Securing with Lightwell:** identify direct Maven access to Red Hat's demo
   repositories for local runs. The AWS path publishes the patch to CodeArtifact
-  explicitly; its implementation is awaiting live validation.
+  explicitly; a live run validated this path with Inspector skipped.
 - **Validate, Deliver:** distinguish raw scanner findings, sample-VEX filtering
   and the future Inspector image comparison. A successful build is not a
   security-fix attestation.

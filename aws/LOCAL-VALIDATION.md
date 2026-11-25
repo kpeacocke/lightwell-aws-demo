@@ -33,10 +33,12 @@ IAM policies are sufficient or that live services accept the complete workflow.
 
 ## AWS validation
 
-These local checks created no AWS resources. A subsequent live run passed
-CodeArtifact publication and resolution, CodeBuild scenarios, ECR push and
-Fargate execution with CloudWatch output in ap-southeast-1, with Inspector
-skipped. Inspector coverage, Lightwell patch recognition and stack cleanup
-remain unverified. The live run preceded the current private networking,
-customer-managed log encryption and S3 access-logging changes; those changes
-have not been live-validated.
+These local checks created no AWS resources. A subsequent live run reused an
+identical previously published CodeArtifact package and passed dependency
+resolution, CodeBuild scenarios, ECR push and both Fargate tasks with
+CloudWatch output in ap-southeast-1, with Inspector skipped. The stack used
+the current private networking, customer-managed log
+encryption and S3 access logging. Build
+`lightwell-demo:3247b2cc-0859-4cc7-8b27-317b6fd79f1c` ran on 25 November
+2026 at 06:24-06:29 UTC using revision `7dc34b6`. Inspector coverage,
+Lightwell patch recognition and stack cleanup remain unverified.

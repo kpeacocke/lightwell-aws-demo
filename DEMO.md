@@ -4,7 +4,7 @@
 
 Present this demonstration immediately after **Integrating Lightwell Updates**.
 It provides one concrete Java example behind the broader AWS and Lightwell
-architecture. The local demonstration is validated. One AWS run passed with
+architecture. The local demonstration is validated. An AWS run passed with
 Inspector skipped; rehearse in the target account before presenting live.
 
 Opening statement:
@@ -23,7 +23,7 @@ Opening statement:
   2026 using Maven 3.10.2 and Java 27, targeting Java 11 bytecode.
 - **Manual extension:** Derek's Trivy and sample-VEX sequence. The automated
   runner does not perform these scans.
-- **Live-validated once:** CodeArtifact publication, CodeBuild, ECR and Fargate
+- **Live-validated:** CodeArtifact publication, CodeBuild, ECR and Fargate
   with Inspector skipped. Inspector remains unverified. See [AWS setup](aws/README.md).
 - **Future:** Transform and Continuum exercises.
 - **Not established:** general compatibility, exploit remediation, migration
@@ -182,7 +182,7 @@ Local Maven build <-- Maven Central / Lightwell demo repositories
 Dependency checks + payment smoke check --> Local evidence
 ```
 
-The implemented AWS path, previously validated once with Inspector skipped, is:
+The implemented AWS path, validated with Inspector skipped, is:
 
 ```text
 CodeArtifact --> CodeBuild --> ECR --> Inspector findings
@@ -193,9 +193,9 @@ CodeArtifact --> CodeBuild --> ECR --> Inspector findings
 ```
 
 CloudFormation and IAM provide the deployment definition and roles. The files
-exist under `aws/`; the successful run created AWS resources. The current
-private-networking, log-encryption and access-logging changes have not yet
-been live-validated.
+exist under `aws/`; the successful run used the current private networking,
+log encryption and access logging configuration. Its build ID and limitations
+are recorded in [AWS setup](aws/README.md).
 
 ### CodeArtifact delivery
 
@@ -229,7 +229,7 @@ Migration acceleration and token savings need a separately measured pilot.
 ## Slide wording to align before presenting
 
 - **High Level Overview:** distinguish Lightwell repositories from CodeArtifact;
-  label explicit publication as validated once with Inspector skipped.
+  label explicit publication as validated with Inspector skipped.
 - **Integrating Lightwell Updates:** distinguish artifact selection, build
   orchestration and scanning from automatic remediation generation.
 - **AWS + Red Hat Lightwell:** distinguish implemented paths from future

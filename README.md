@@ -3,7 +3,7 @@
 This package reproduces Derek Waters' four Maven scenarios locally and includes
 an AWS integration for CodeArtifact, CodeBuild, ECR/Inspector and Fargate.
 The local runner creates no AWS resources and does not require Docker.
-The AWS integration has also passed one live run with Inspector skipped.
+The AWS integration has also passed live runs with Inspector skipped.
 
 ## Presenting with the AWS slide deck
 
@@ -14,7 +14,7 @@ immediately after **Integrating Lightwell Updates**.
 The local demo demonstrates targeted dependency replacement and sample
 execution. The AWS code now implements explicit CodeArtifact patch publication,
 four CodeBuild scenarios, three ECR images, Inspector evidence collection and
-two Fargate tasks. One live AWS run passed with Inspector skipped; scanning
+two Fargate tasks. Live AWS runs passed with Inspector skipped; scanning
 and backport recognition remain unverified.
 Transform and Continuum remain future exercises.
 
@@ -153,9 +153,10 @@ as proof that the CVE is fixed.
 
 ## AWS integration and validation
 
-The integration is implemented under `aws/`. One run passed in an AWS account
-with Inspector skipped, before the current AWS security and networking changes;
-rehearse the current configuration in the target account before presenting.
+The integration is implemented under `aws/`. A run passed in ap-southeast-1
+with the current private networking, log encryption and access logging in
+place and Inspector skipped; rehearse in the target account before presenting.
+See the [AWS setup guide](aws/README.md) for the recorded build and its limits.
 The setup guide covers required permissions, Inspector enablement, artifact
 publication, evidence, costs and cleanup. The package does not enforce a
 monetary cap.
