@@ -184,6 +184,10 @@ the actual AWS build ID and time. Do not substitute local tests for AWS output.
 
 ## Evidence and failure handling
 
+The pipeline creates `evidence/aws/` when it runs; generated files there are
+ignored by Git. CodeBuild still includes them in its artifact ZIP. No empty
+directory placeholder is needed.
+
 The CodeBuild artifact ZIP contains the original scenario reports and `aws/`:
 
 - `integration.json`: stages, task results and overall outcome.

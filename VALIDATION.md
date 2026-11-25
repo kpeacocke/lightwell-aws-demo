@@ -46,11 +46,8 @@ Maven 3.10.2; Maven used Homebrew OpenJDK 27.0.1.1. The POM compiles for Java
 No vulnerability scanner, exploit test, AWS resource or container runtime was
 used. Successful sample output is not proof of CVE remediation or comprehensive
 compatibility. The public Lightwell repository prefix metadata emitted
-missing-checksum warnings; full logs are retained. Recorded artifact hashes
+missing-checksum warnings. Recorded artifact hashes
 establish byte identity, not independent vendor authenticity.
 
-[Detailed run report](evidence/20261124T220528172606Z/REPORT.md)
-
-[Machine-readable results and commands](evidence/20261124T220528172606Z/results.json)
-
-[Toolchain](evidence/20261124T220528172606Z/toolchain.txt)
+The original run files are not included in the repository. Run the demo to
+generate a new report, machine-readable results, logs and toolchain record.

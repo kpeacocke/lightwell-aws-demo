@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run inside CodeBuild: publish, build, scan and execute the demo."""
 
+from __future__ import annotations
+
 import base64
 import fnmatch
 import hashlib
@@ -11,11 +13,20 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, overload
 from xml.sax.saxutils import escape
 
 import boto3
 from botocore.exceptions import ClientError
+
+if TYPE_CHECKING:
+    from mypy_boto3_codeartifact.client import CodeArtifactClient
+    from mypy_boto3_ecr.client import ECRClient
+    from mypy_boto3_ecs.client import ECSClient
+    from mypy_boto3_inspector2.client import Inspector2Client
+    from mypy_boto3_logs.client import CloudWatchLogsClient
 
 ROOT = Path(__file__).resolve().parents[1]
 CVE = "CVE-2022-40152"
@@ -24,16 +35,46 @@ SCENARIOS = ("baseline", "conventional", "lightwell")
 DEPENDENCY_PLUGIN = "org.apache.maven.plugins:maven-dependency-plugin:3.8.1"
 
 
-def write_json(path, data):
+@overload
+def _aws_client(
+    session: Any, service_name: Literal["codeartifact"]
+) -> CodeArtifactClient: ...
+
+
+@overload
+def _aws_client(session: Any, service_name: Literal["ecs"]) -> ECSClient: ...
+
+
+@overload
+def _aws_client(session: Any, service_name: Literal["ecr"]) -> ECRClient: ...
+
+
+@overload
+def _aws_client(
+    session: Any, service_name: Literal["inspector2"]
+) -> Inspector2Client: ...
+
+
+@overload
+def _aws_client(
+    session: Any, service_name: Literal["logs"]
+) -> CloudWatchLogsClient: ...
+
+
+def _aws_client(session: Any, service_name: str) -> Any:
+    return session.client(service_name)
+
+
+def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, default=str) + "\n")
 
 
-def sha(path):
+def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def payment_ok(output):
+def payment_ok(output: str) -> bool:
     return all(
         re.search(p, output)
         for p in (
@@ -44,7 +85,7 @@ def payment_ok(output):
     )
 
 
-def enhanced_for_repository(config, repository):
+def enhanced_for_repository(config: Mapping[str, Any], repository: str) -> bool:
     return config.get("scanType") == "ENHANCED" and any(
         fnmatch.fnmatchcase(repository, f["filter"])
         for rule in config.get("rules", [])
@@ -53,7 +94,7 @@ def enhanced_for_repository(config, repository):
     )
 
 
-def maven_settings(endpoint):
+def maven_settings(endpoint: str) -> str:
     return f"""<settings>
   <servers><server><id>codeartifact</id><username>aws</username>
     <password>${{env.CODEARTIFACT_AUTH_TOKEN}}</password>
@@ -65,7 +106,9 @@ def maven_settings(endpoint):
 """
 
 
-def command(args, log, cwd=ROOT, timeout=600):
+def command(
+    args: Sequence[str], log: Path, cwd: Path = ROOT, timeout: int = 600
+) -> str:
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("w") as stream:
         proc = subprocess.run(
@@ -76,7 +119,7 @@ def command(args, log, cwd=ROOT, timeout=600):
     return log.read_text()
 
 
-def maven(settings, cache):
+def maven(settings: Path, cache: Path) -> list[str]:
     return [
         "mvn",
         "-B",
@@ -90,7 +133,9 @@ def maven(settings, cache):
     ]
 
 
-def prepare_codeartifact(client, work, evidence):
+def prepare_codeartifact(
+    client: CodeArtifactClient, work: Path, evidence: Path
+) -> tuple[Path, str]:
     domain, repo = os.environ["CA_DOMAIN"], os.environ["CA_REPOSITORY"]
     endpoint = client.get_repository_endpoint(
         domain=domain, repository=repo, format="maven"
@@ -125,7 +170,7 @@ def prepare_codeartifact(client, work, evidence):
     )
     existing = False
     try:
-        remote_hashes = {}
+        remote_hashes: dict[str, str] = {}
         for asset in (jar, pom):
             remote = client.get_package_version_asset(
                 domain=domain,
@@ -144,7 +189,11 @@ def prepare_codeartifact(client, work, evidence):
             raise RuntimeError("Existing CodeArtifact patch differs from vendor bytes")
         existing = True
     except ClientError as error:
-        if error.response["Error"]["Code"] != "ResourceNotFoundException":
+        error_detail = error.response.get("Error")
+        if (
+            error_detail is None
+            or error_detail.get("Code") != "ResourceNotFoundException"
+        ):
             raise
     if not existing:
         command(
@@ -176,20 +225,32 @@ def prepare_codeartifact(client, work, evidence):
     return settings, sha(jar)
 
 
-def require_local_results(report):
+def require_local_results(report: Mapping[str, Any]) -> None:
     expected = {"baseline", "pinned-failure", "conventional", "lightwell"}
-    results = report.get("scenarios", [])
+    results: list[dict[str, Any]] = report.get("scenarios", [])
     if {r["name"] for r in results} != expected or len(results) != 4:
         raise RuntimeError("Missing or duplicate scenario results")
     if any(r.get("status") != "PASS" for r in results):
         raise RuntimeError("A local scenario did not meet its expected outcome")
 
 
-def build_images(ecr, settings, report, work, evidence, vendor_hash):
-    login = ecr.get_authorization_token()["authorizationData"][0]
-    user, password = (
-        base64.b64decode(login["authorizationToken"]).decode().split(":", 1)
-    )
+def build_images(
+    ecr: ECRClient,
+    settings: Path,
+    report: Mapping[str, Any],
+    work: Path,
+    evidence: Path,
+    vendor_hash: str,
+) -> dict[str, dict[str, str]]:
+    authorization_data = ecr.get_authorization_token().get("authorizationData", [])
+    if not authorization_data:
+        raise RuntimeError("ECR did not return authorization data")
+    login = authorization_data[0]
+    token = login.get("authorizationToken")
+    proxy_endpoint = login.get("proxyEndpoint")
+    if token is None or proxy_endpoint is None:
+        raise RuntimeError("ECR authorization data is incomplete")
+    user, password = base64.b64decode(token).decode().split(":", 1)
     subprocess.run(
         [
             "docker",
@@ -197,7 +258,7 @@ def build_images(ecr, settings, report, work, evidence, vendor_hash):
             "--username",
             user,
             "--password-stdin",
-            login["proxyEndpoint"],
+            proxy_endpoint,
         ],
         input=password,
         text=True,
@@ -223,7 +284,7 @@ def build_images(ecr, settings, report, work, evidence, vendor_hash):
             "image_id": inspected["Id"],
         },
     )
-    images = {}
+    images: dict[str, dict[str, str]] = {}
     for scenario in SCENARIOS:
         project = Path(report["scratch"]) / scenario / "project"
         cache = project.parent / "m2"
@@ -280,19 +341,30 @@ def build_images(ecr, settings, report, work, evidence, vendor_hash):
         if not payment_ok(output):
             raise RuntimeError(f"{scenario}: container payment output mismatch")
         command(["docker", "push", uri], evidence / f"{scenario}-push.log")
-        detail = ecr.describe_images(
+        image_details = ecr.describe_images(
             repositoryName=os.environ["ECR_REPOSITORY"], imageIds=[{"imageTag": tag}]
-        )["imageDetails"][0]
+        ).get("imageDetails", [])
+        if not image_details:
+            raise RuntimeError(f"{scenario}: ECR did not return an image digest")
+        digest = image_details[0].get("imageDigest")
+        if digest is None:
+            raise RuntimeError(f"{scenario}: ECR did not return an image digest")
         images[scenario] = {
             "tag": tag,
-            "digest": detail["imageDigest"],
-            "uri": f"{os.environ['ECR_URI']}@{detail['imageDigest']}",
+            "digest": digest,
+            "uri": f"{os.environ['ECR_URI']}@{digest}",
         }
         write_json(evidence / "images.json", images)
     return images
 
 
-def run_fargate(ecs, logs, image, scenario, evidence):
+def run_fargate(
+    ecs: ECSClient,
+    logs: CloudWatchLogsClient,
+    image: Mapping[str, str],
+    scenario: str,
+    evidence: Path,
+) -> dict[str, str]:
     family = os.environ["DEMO_NAME"] + "-runtime"
     registration = ecs.register_task_definition(
         family=family,
@@ -320,8 +392,11 @@ def run_fargate(ecs, logs, image, scenario, evidence):
             }
         ],
     )
-    definition = registration["taskDefinition"]["taskDefinitionArn"]
+    definition = registration["taskDefinition"].get("taskDefinitionArn")
+    if definition is None:
+        raise RuntimeError("ECS did not return a task definition ARN")
     task_arn = None
+    task = None
     stopped = False
     try:
         response = ecs.run_task(
@@ -340,7 +415,12 @@ def run_fargate(ecs, logs, image, scenario, evidence):
         write_json(evidence / f"{scenario}-task-start.json", response)
         if response.get("failures") or len(response.get("tasks", [])) != 1:
             raise RuntimeError("Fargate rejected the task launch")
-        task_arn = response["tasks"][0]["taskArn"]
+        tasks = response.get("tasks", [])
+        if not tasks:
+            raise RuntimeError("ECS did not return a task ARN")
+        task_arn = tasks[0].get("taskArn")
+        if task_arn is None:
+            raise RuntimeError("ECS did not return a task ARN")
         deadline = time.monotonic() + 300
         while time.monotonic() < deadline:
             details = ecs.describe_tasks(
@@ -350,12 +430,14 @@ def run_fargate(ecs, logs, image, scenario, evidence):
             if details.get("failures"):
                 raise RuntimeError("Cannot describe Fargate task")
             task = details["tasks"][0]
-            if task["lastStatus"] == "STOPPED":
+            if task.get("lastStatus") == "STOPPED":
                 stopped = True
                 break
             time.sleep(5)
         if not stopped:
             raise RuntimeError("Fargate task exceeded five-minute deadline")
+        if task is None:
+            raise RuntimeError("Fargate stopped without returning task details")
         containers = task.get("containers", [])
         if len(containers) != 1 or containers[0].get("exitCode") != 0:
             raise RuntimeError(f"Fargate failed: {task.get('stoppedReason')}")
@@ -368,7 +450,9 @@ def run_fargate(ecs, logs, image, scenario, evidence):
                     logStreamName=stream,
                     startFromHead=True,
                 )
-                output = "\n".join(e["message"] for e in events["events"])
+                output = "\n".join(
+                    event.get("message") or "" for event in events.get("events", [])
+                )
             except logs.exceptions.ResourceNotFoundException:
                 output = ""
             if payment_ok(output):
@@ -390,16 +474,22 @@ def run_fargate(ecs, logs, image, scenario, evidence):
         ecs.deregister_task_definition(taskDefinition=definition)
 
 
-def scan_images(ecr, images, evidence, timeout=600):
+def scan_images(
+    ecr: ECRClient,
+    images: Mapping[str, Mapping[str, str]],
+    evidence: Path,
+    timeout: int = 600,
+) -> dict[str, dict[str, Any]]:
     pending = dict(images)
-    results = {}
+    results: dict[str, dict[str, Any]] = {}
     deadline = time.monotonic() + timeout
     while pending and time.monotonic() < deadline:
         for name, image in list(pending.items()):
             try:
-                pages, token = [], None
+                pages: list[Mapping[str, Any]] = []
+                token: str | None = None
                 while True:
-                    args = {
+                    args: dict[str, Any] = {
                         "repositoryName": os.environ["ECR_REPOSITORY"],
                         "imageId": {"imageDigest": image["digest"]},
                         "maxResults": 1000,
@@ -421,7 +511,7 @@ def scan_images(ecr, images, evidence, timeout=600):
                 # ACTIVE means continuous coverage, not by itself a completed scan.
                 if state not in ("ACTIVE", "COMPLETE") or not scanned:
                     continue
-                findings = [
+                findings: list[Mapping[str, Any]] = [
                     f
                     for p in pages
                     for f in p.get("imageScanFindings", {}).get("enhancedFindings", [])
@@ -446,7 +536,8 @@ def scan_images(ecr, images, evidence, timeout=600):
                 }
                 del pending[name]
             except ClientError as error:
-                if error.response["Error"]["Code"] not in (
+                error_detail = error.response.get("Error")
+                if error_detail is None or error_detail.get("Code") not in (
                     "ScanNotFoundException",
                     "ImageNotFoundException",
                 ):
@@ -464,14 +555,18 @@ def scan_images(ecr, images, evidence, timeout=600):
     return results
 
 
-def main():
+def main() -> int:
     work = Path("/tmp/lightwell-aws")
     work.mkdir(exist_ok=True)
     evidence = ROOT / "evidence/aws"
     evidence.mkdir(parents=True, exist_ok=True)
     session = boto3.Session()
-    ecr = session.client("ecr")
-    summary = {"status": "RUNNING", "stages": {}, "security_fix_verified": False}
+    ecr = _aws_client(session, "ecr")
+    summary: dict[str, Any] = {
+        "status": "RUNNING",
+        "stages": {},
+        "security_fix_verified": False,
+    }
     try:
         scan_mode = os.environ.get("INSPECTOR_SCAN_MODE", "required")
         if scan_mode not in ("required", "skip"):
@@ -487,7 +582,7 @@ def main():
             summary["stages"]["inspector"] = "SKIPPED"
             print("Inspector scanning skipped; no scan evidence will be collected.")
         settings, vendor_hash = prepare_codeartifact(
-            session.client("codeartifact"), work, evidence
+            _aws_client(session, "codeartifact"), work, evidence
         )
         summary["stages"]["codeartifact"] = "PUBLISHED"
         command(
@@ -514,8 +609,8 @@ def main():
         summary["tasks"] = {}
         for scenario in ("conventional", "lightwell"):
             summary["tasks"][scenario] = run_fargate(
-                session.client("ecs"),
-                session.client("logs"),
+                _aws_client(session, "ecs"),
+                _aws_client(session, "logs"),
                 images[scenario],
                 scenario,
                 evidence,
@@ -535,7 +630,7 @@ def main():
         else:
             # Separate resource coverage from findings. Preserve both raw responses.
             coverage = list(
-                session.client("inspector2")
+                _aws_client(session, "inspector2")
                 .get_paginator("list_coverage")
                 .paginate(
                     filterCriteria={

@@ -12,16 +12,50 @@ import unittest
 import zipfile
 from argparse import Namespace
 from pathlib import Path
+from types import ModuleType
+from typing import Any, Literal, overload
 from unittest.mock import Mock, patch
 
 import boto3
 from botocore.stub import Stubber
+from mypy_boto3_codebuild.client import CodeBuildClient
+from mypy_boto3_ecr.client import ECRClient
+from mypy_boto3_ecs.client import ECSClient
+from mypy_boto3_logs.client import CloudWatchLogsClient
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def load(name, path):
+@overload
+def _test_client(service_name: Literal["codebuild"]) -> CodeBuildClient: ...
+
+
+@overload
+def _test_client(service_name: Literal["ecs"]) -> ECSClient: ...
+
+
+@overload
+def _test_client(service_name: Literal["ecr"]) -> ECRClient: ...
+
+
+@overload
+def _test_client(service_name: Literal["logs"]) -> CloudWatchLogsClient: ...
+
+
+def _test_client(service_name: str) -> Any:
+    session: Any = boto3.Session()
+    return session.client(
+        service_name,
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+
+
+def load(name: str, path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -54,6 +88,8 @@ class DemoTests(unittest.TestCase):
                 credentials = boto3.Session(
                     profile_name="custom-demo", region_name="us-east-1"
                 ).get_credentials()
+                if credentials is None:
+                    self.fail("Expected environment credentials")
                 self.assertEqual(credentials.method, "custom-process")
                 self.assertEqual(credentials.access_key, "test-key")
                 self.assertEqual(credentials.secret_key, "test-secret")
@@ -103,7 +139,7 @@ class DemoTests(unittest.TestCase):
         self.assertNotIn(os.environ.get("SECRET_TEST_TOKEN", "not-a-real-token"), xml)
 
     def test_basic_scanning_is_not_inspector(self):
-        config = {
+        config: dict[str, Any] = {
             "scanType": "BASIC",
             "rules": [
                 {
@@ -120,8 +156,10 @@ class DemoTests(unittest.TestCase):
 
     def test_build_requires_inspector_unless_explicitly_skipped(self):
         state = {"Repository": "demo", "Bucket": "bucket", "Project": "project"}
-        session = Mock()
-        ecr, s3, codebuild = Mock(), Mock(), Mock()
+        session: Any = Mock()
+        ecr: Any = Mock()
+        s3: Any = Mock()
+        codebuild: Any = Mock()
         session.client.side_effect = {"ecr": ecr, "s3": s3, "codebuild": codebuild}.get
         ecr.get_registry_scanning_configuration.return_value = {
             "scanningConfiguration": {"scanType": "BASIC"}
@@ -169,19 +207,23 @@ class DemoTests(unittest.TestCase):
         )
         from botocore.validate import validate_parameters
 
-        model = boto3.client(
-            "codebuild",
-            region_name="us-east-1",
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        ).meta.service_model.operation_model("StartBuild")
-        validate_parameters(codebuild.start_build.call_args.kwargs, model.input_shape)
+        model = _test_client("codebuild").meta.service_model.operation_model(
+            "StartBuild"
+        )
+        input_shape = model.input_shape
+        if input_shape is None:
+            self.fail("StartBuild operation has no input shape")
+        validate_parameters(codebuild.start_build.call_args.kwargs, input_shape)
 
     def test_pipeline_skip_records_unscanned_images_and_runs_tasks(self):
         images = {name: {"uri": f"image:{name}"} for name in pipeline.SCENARIOS}
-        session = Mock()
-        ecr = Mock()
-        session.client.side_effect = lambda name: ecr if name == "ecr" else Mock()
+        session: Any = Mock()
+        ecr: Any = Mock()
+
+        def client_for(name: str) -> Any:
+            return ecr if name == "ecr" else Mock()
+
+        session.client.side_effect = client_for
         report = {
             "scenarios": [
                 {"name": name, "status": "PASS"}
@@ -191,7 +233,8 @@ class DemoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
 
-            def scenario_command(*args, **kwargs):
+            def scenario_command(*_args: Any, **_kwargs: Any) -> None:
+                del _args, _kwargs
                 result = root / "evidence/run/results.json"
                 result.parent.mkdir(parents=True)
                 result.write_text(json.dumps(report))
@@ -231,7 +274,7 @@ class DemoTests(unittest.TestCase):
 
     def test_pipeline_default_requires_coverage_and_rejects_invalid_mode(self):
         with tempfile.TemporaryDirectory() as directory:
-            session = Mock()
+            session: Any = Mock()
             ecr = session.client.return_value
             ecr.get_registry_scanning_configuration.return_value = {
                 "scanningConfiguration": {"scanType": "BASIC"}
@@ -298,7 +341,7 @@ class DemoTests(unittest.TestCase):
             self.assertEqual(result["lightwell"]["interpretation"], "INCONCLUSIVE")
 
     def test_active_scan_without_timestamp_is_not_complete(self):
-        client = Mock()
+        client: Any = Mock()
         client.describe_image_scan_findings.return_value = {
             "imageScanStatus": {"status": "ACTIVE"},
             "imageScanFindings": {},
@@ -318,12 +361,7 @@ class DemoTests(unittest.TestCase):
             )
 
     def test_no_finding_does_not_claim_backport_verified(self):
-        client = boto3.client(
-            "ecr",
-            region_name="us-east-1",
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        )
+        client = _test_client("ecr")
         digest = "sha256:" + "a" * 64
         with (
             Stubber(client) as stub,
@@ -355,7 +393,7 @@ class DemoTests(unittest.TestCase):
             stub.assert_no_pending_responses()
 
     def test_fargate_launch_failure_is_not_success_and_definition_cleaned(self):
-        ecs = Mock()
+        ecs: Any = Mock()
         ecs.register_task_definition.return_value = {
             "taskDefinition": {"taskDefinitionArn": "arn:test:definition"}
         }
@@ -395,7 +433,7 @@ class DemoTests(unittest.TestCase):
                 (package_dir / f"woodstox-core-{pipeline.PATCH}.{ext}").write_bytes(
                     b"same"
                 )
-            client = Mock()
+            client: Any = Mock()
             client.get_repository_endpoint.return_value = {
                 "repositoryEndpoint": "https://example.test/repo/"
             }
@@ -439,7 +477,7 @@ class DemoTests(unittest.TestCase):
                 (package_dir / f"woodstox-core-{pipeline.PATCH}.{ext}").write_bytes(
                     b"vendor"
                 )
-            client = Mock()
+            client: Any = Mock()
             client.get_repository_endpoint.return_value = {
                 "repositoryEndpoint": "https://example.test/repo/"
             }
@@ -460,22 +498,13 @@ class DemoTests(unittest.TestCase):
     def test_fargate_success_checks_output_and_api_shapes(self):
         from botocore.validate import validate_parameters
 
-        ecs_model = boto3.client(
-            "ecs",
-            region_name="us-east-1",
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        )
-        logs_model = boto3.client(
-            "logs",
-            region_name="us-east-1",
-            aws_access_key_id="test",
-            aws_secret_access_key="test",
-        )
-        ecs, logs = Mock(), Mock()
+        ecs_model = _test_client("ecs")
+        logs_model = _test_client("logs")
+        ecs: Any = Mock()
+        logs: Any = Mock()
 
-        def validated(client, operation, response):
-            def call(**kwargs):
+        def validated(client: Any, operation: str, response: Any) -> Any:
+            def call(**kwargs: Any) -> Any:
                 model = client.meta.service_model.operation_model(operation)
                 validate_parameters(kwargs, model.input_shape)
                 return response

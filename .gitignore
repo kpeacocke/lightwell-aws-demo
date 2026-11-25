@@ -44,3 +44,6 @@ Thumbs.db
 
 # Local AWS source packages
 .aws-demo/
+
+# Generated demo evidence
+/evidence/

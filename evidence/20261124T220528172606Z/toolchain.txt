@@ -1,5 +1,0 @@
-Apache Maven 3.10.2 (61b8bc355f4c4325463c22aa9afe4e7811a290f8)
-Maven home: /opt/homebrew/Cellar/maven/3.10.2/libexec
-Java version: 27.0.1.1, vendor: Homebrew, runtime: /opt/homebrew/Cellar/openjdk/27.0.1.1/libexec/openjdk.jdk/Contents/Home
-Default locale: en_AU, platform encoding: UTF-8, time zone: Australia/Sydney
-OS name: "mac os x", version: "27.3", arch: "aarch64", family: "mac"
