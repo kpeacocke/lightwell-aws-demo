@@ -1,5 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Lightwell demo - CodeArtifact, CodeBuild, ECR and one-shot Fargate
+Metadata:
+  com.aws.cloudformation.Context:
+    arch: >-
+      CodeBuild builds and scans demo images using CodeArtifact and ECR,
+      runs one-shot ECS Fargate tasks, and stores evidence in S3 and logs
+      in CloudWatch.
 Parameters:
   DemoName:
     Type: String
@@ -12,6 +18,9 @@ Parameters:
 Resources:
   EvidenceBucket:
     Type: AWS::S3::Bucket
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Store build sources and retained demo evidence.
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -23,13 +32,49 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref AccessLogBucket
+        LogFilePrefix: access/
       LifecycleConfiguration:
         Rules:
           - Id: ExpireDemoArtifacts
             Status: Enabled
             ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+  AccessLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules: [S3_BUCKET_LOGGING_ENABLED]
+      com.aws.cloudformation.Context:
+        why: Store evidence-bucket access logs without recursive logging.
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAccessLogs
+            Status: Enabled
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
   BucketPolicy:
     Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Bucket: !Ref EvidenceBucket
       PolicyDocument:
@@ -41,65 +86,140 @@ Resources:
             Resource:
               - !GetAtt EvidenceBucket.Arn
               - !Sub '${EvidenceBucket.Arn}/*'
-            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+            Condition: {Bool: {'aws:SecureTransport': false}}
+  AccessLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AccessLogBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt AccessLogBucket.Arn
+              - !Sub '${AccessLogBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+                aws:PrincipalIsAWSService: false
+          - Effect: Allow
+            Principal: {Service: logging.s3.amazonaws.com}
+            Action: s3:PutObject
+            Resource: !Sub '${AccessLogBucket.Arn}/access/*'
+            Condition:
+              ArnLike: {aws:SourceArn: !GetAtt EvidenceBucket.Arn}
+              StringEquals: {aws:SourceAccount: !Ref AWS::AccountId}
   Domain:
     Type: AWS::CodeArtifact::Domain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Host the demo's CodeArtifact repository.
     Properties: {DomainName: !Ref DemoName}
   Packages:
     Type: AWS::CodeArtifact::Repository
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Serve Maven Central packages and the explicitly published demo patch.
     Properties:
       DomainName: !GetAtt Domain.Name
       RepositoryName: demo-maven
       ExternalConnections: [public:maven-central]
   Images:
     Type: AWS::ECR::Repository
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Store the demo images for scanning and Fargate execution.
     Properties:
       RepositoryName: !Ref DemoName
       ImageTagMutability: IMMUTABLE
       EmptyOnDelete: true
       EncryptionConfiguration: {EncryptionType: AES256}
+  LogsKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Encrypt demo log groups with a customer-managed KMS key.
+    Properties:
+      EnableKeyRotation: true
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AccountAdministration
+            Effect: Allow
+            Principal: {AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'}
+            Action: kms:*
+            Resource: '*'
+          - Sid: CloudWatchLogs
+            Effect: Allow
+            Principal: {Service: !Sub 'logs.${AWS::Region}.${AWS::URLSuffix}'}
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: '*'
+            Condition:
+              ArnEquals:
+                kms:EncryptionContext:aws:logs:arn:
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/${DemoName}'
+                  - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/ecs/${DemoName}'
   BuildLogs:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       LogGroupName: !Sub '/aws/codebuild/${DemoName}'
       RetentionInDays: 14
+      KmsKeyId: !GetAtt LogsKey.Arn
   TaskLogs:
     Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       LogGroupName: !Sub '/ecs/${DemoName}'
       RetentionInDays: 14
+      KmsKeyId: !GetAtt LogsKey.Arn
   Vpc:
     Type: AWS::EC2::VPC
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Provide networking for the demo Fargate tasks.
     Properties:
       CidrBlock: 10.83.0.0/24
       EnableDnsSupport: true
       EnableDnsHostnames: true
-  Gateway:
-    Type: AWS::EC2::InternetGateway
-  GatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref Gateway}
   Subnet:
     Type: AWS::EC2::Subnet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Host the demo Fargate tasks.
     Properties:
       VpcId: !Ref Vpc
       CidrBlock: 10.83.0.0/25
       MapPublicIpOnLaunch: false
   Routes:
     Type: AWS::EC2::RouteTable
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Define the task subnet's network routes.
     Properties: {VpcId: !Ref Vpc}
-  InternetRoute:
-    Type: AWS::EC2::Route
-    DependsOn: GatewayAttachment
-    Properties:
-      RouteTableId: !Ref Routes
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref Gateway
   Association:
     Type: AWS::EC2::SubnetRouteTableAssociation
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Apply the route table to the task subnet.
     Properties: {RouteTableId: !Ref Routes, SubnetId: !Ref Subnet}
   TaskSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Restrict task networking to outbound HTTPS and no inbound traffic.
     Properties:
       GroupDescription: No inbound traffic; HTTPS egress for ECR and logs
       VpcId: !Ref Vpc
@@ -108,11 +228,76 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Allow demo tasks to reach private AWS service endpoints over HTTPS.
+    Properties:
+      GroupDescription: HTTPS from demo tasks to private endpoints
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref TaskSecurityGroup
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Provide private access to the ECR API.
+    Properties:
+      VpcId: !Ref Vpc
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.api'
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref Subnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  EcrDockerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Provide private access to the ECR image registry.
+    Properties:
+      VpcId: !Ref Vpc
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.ecr.dkr'
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref Subnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Let Fargate send task logs without internet access.
+    Properties:
+      VpcId: !Ref Vpc
+      VpcEndpointType: Interface
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.logs'
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref Subnet]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Let Fargate download ECR image layers from S3.
+    Properties:
+      VpcId: !Ref Vpc
+      VpcEndpointType: Gateway
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      RouteTableIds: [!Ref Routes]
   Cluster:
     Type: AWS::ECS::Cluster
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Run the one-shot Fargate demo tasks.
     Properties: {ClusterName: !Ref DemoName}
   ExecutionRole:
     Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Let Fargate pull demo images and write task logs.
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -120,22 +305,30 @@ Resources:
           - Effect: Allow
             Principal: {Service: ecs-tasks.amazonaws.com}
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: PullDemoAndWriteLogs
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
-                Resource: '*'
-              - Effect: Allow
-                Action: [ecr:BatchCheckLayerAvailability, ecr:GetDownloadUrlForLayer, ecr:BatchGetImage]
-                Resource: !GetAtt Images.Arn
-              - Effect: Allow
-                Action: [logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !GetAtt TaskLogs.Arn
+  ExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Attach image-pull and logging permissions to the task execution role.
+    Properties:
+      Roles: [!Ref ExecutionRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ecr:GetAuthorizationToken
+            Resource: '*'
+          - Effect: Allow
+            Action: [ecr:BatchCheckLayerAvailability, ecr:GetDownloadUrlForLayer, ecr:BatchGetImage]
+            Resource: !GetAtt Images.Arn
+          - Effect: Allow
+            Action: [logs:CreateLogStream, logs:PutLogEvents]
+            Resource: !GetAtt TaskLogs.Arn
   BuildRole:
     Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Grant CodeBuild the permissions needed for the demo pipeline.
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -143,70 +336,78 @@ Resources:
           - Effect: Allow
             Principal: {Service: codebuild.amazonaws.com}
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: DemoPipeline
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
-                Resource: !Sub '${EvidenceBucket.Arn}/*'
-              - Effect: Allow
-                Action: [s3:GetBucketLocation, s3:ListBucket]
-                Resource: !GetAtt EvidenceBucket.Arn
-              - Effect: Allow
-                Action: [logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !GetAtt BuildLogs.Arn
-              - Effect: Allow
-                Action: logs:GetLogEvents
-                Resource: !GetAtt TaskLogs.Arn
-              - Effect: Allow
-                Action: [ecr:GetAuthorizationToken, ecr:GetRegistryScanningConfiguration]
-                Resource: '*'
-              - Effect: Allow
-                Action: [ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:DescribeImages, ecr:DescribeImageScanFindings]
-                Resource: !GetAtt Images.Arn
-              - Effect: Allow
-                Action: [codeartifact:GetAuthorizationToken]
-                Resource: !GetAtt Domain.Arn
-              - Effect: Allow
-                Action: [codeartifact:GetRepositoryEndpoint, codeartifact:ReadFromRepository]
-                Resource: !GetAtt Packages.Arn
-              - Effect: Allow
-                Action: [codeartifact:PublishPackageVersion, codeartifact:PutPackageMetadata, codeartifact:GetPackageVersionAsset, codeartifact:PutPackageOriginConfiguration]
-                Resource: !Sub 'arn:${AWS::Partition}:codeartifact:${AWS::Region}:${AWS::AccountId}:package/${DemoName}/demo-maven/maven/com.fasterxml.woodstox/woodstox-core'
-              - Effect: Allow
-                Action: sts:GetServiceBearerToken
-                Resource: '*'
-                Condition:
-                  StringEquals: {'sts:AWSServiceName': codeartifact.amazonaws.com}
-              - Effect: Allow
-                Action: [inspector2:ListCoverage, inspector2:ListFindings]
-                Resource: '*'
-              - Effect: Allow
-                Action: ecs:RegisterTaskDefinition
-                Resource: '*'
-              - Effect: Allow
-                Action: [ecs:DeregisterTaskDefinition]
-                Resource: '*'
-                Condition:
-                  StringEquals: {'aws:RequestedRegion': !Ref AWS::Region}
-              - Effect: Allow
-                Action: ecs:RunTask
-                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
-                Condition:
-                  ArnEquals: {'ecs:cluster': !GetAtt Cluster.Arn}
-              - Effect: Allow
-                Action: [ecs:DescribeTasks, ecs:StopTask]
-                Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${Cluster}/*'
-              - Effect: Allow
-                Action: iam:PassRole
-                Resource: !GetAtt ExecutionRole.Arn
-                Condition:
-                  StringEquals: {'iam:PassedToService': ecs-tasks.amazonaws.com}
+  BuildPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Attach the scoped pipeline permissions to the CodeBuild role.
+    Properties:
+      Roles: [!Ref BuildRole]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource: !Sub '${EvidenceBucket.Arn}/*'
+          - Effect: Allow
+            Action: [s3:GetBucketLocation, s3:ListBucket]
+            Resource: !GetAtt EvidenceBucket.Arn
+          - Effect: Allow
+            Action: [logs:CreateLogStream, logs:PutLogEvents]
+            Resource: !GetAtt BuildLogs.Arn
+          - Effect: Allow
+            Action: logs:GetLogEvents
+            Resource: !GetAtt TaskLogs.Arn
+          - Effect: Allow
+            Action: [ecr:GetAuthorizationToken, ecr:GetRegistryScanningConfiguration]
+            Resource: '*'
+          - Effect: Allow
+            Action: [ecr:BatchCheckLayerAvailability, ecr:InitiateLayerUpload, ecr:UploadLayerPart, ecr:CompleteLayerUpload, ecr:PutImage, ecr:DescribeImages, ecr:DescribeImageScanFindings]
+            Resource: !GetAtt Images.Arn
+          - Effect: Allow
+            Action: [codeartifact:GetAuthorizationToken]
+            Resource: !GetAtt Domain.Arn
+          - Effect: Allow
+            Action: [codeartifact:GetRepositoryEndpoint, codeartifact:ReadFromRepository]
+            Resource: !GetAtt Packages.Arn
+          - Effect: Allow
+            Action: [codeartifact:PublishPackageVersion, codeartifact:PutPackageMetadata, codeartifact:GetPackageVersionAsset, codeartifact:PutPackageOriginConfiguration]
+            Resource: !Sub 'arn:${AWS::Partition}:codeartifact:${AWS::Region}:${AWS::AccountId}:package/${DemoName}/demo-maven/maven/com.fasterxml.woodstox/woodstox-core'
+          - Effect: Allow
+            Action: sts:GetServiceBearerToken
+            Resource: '*'
+            Condition:
+              StringEquals: {'sts:AWSServiceName': codeartifact.amazonaws.com}
+          - Effect: Allow
+            Action: [inspector2:ListCoverage, inspector2:ListFindings]
+            Resource: '*'
+          - Effect: Allow
+            Action: ecs:RegisterTaskDefinition
+            Resource: '*'
+          - Effect: Allow
+            Action: [ecs:DeregisterTaskDefinition]
+            Resource: '*'
+            Condition:
+              StringEquals: {'aws:RequestedRegion': !Ref AWS::Region}
+          - Effect: Allow
+            Action: ecs:RunTask
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task-definition/${DemoName}-runtime:*'
+            Condition:
+              ArnEquals: {'ecs:cluster': !GetAtt Cluster.Arn}
+          - Effect: Allow
+            Action: [ecs:DescribeTasks, ecs:StopTask]
+            Resource: !Sub 'arn:${AWS::Partition}:ecs:${AWS::Region}:${AWS::AccountId}:task/${Cluster}/*'
+          - Effect: Allow
+            Action: iam:PassRole
+            Resource: !GetAtt ExecutionRole.Arn
+            Condition:
+              StringEquals: {'iam:PassedToService': ecs-tasks.amazonaws.com}
   Build:
     Type: AWS::CodeBuild::Project
-    DependsOn: [InternetRoute, Association]
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Build and scan demo images, run tasks, and collect evidence.
+    DependsOn: [Association, EcrApiEndpoint, EcrDockerEndpoint, LogsEndpoint, S3Endpoint, BuildPolicy, ExecutionPolicy, AccessLogBucketPolicy]
     Properties:
       Name: !Ref DemoName
       ServiceRole: !GetAtt BuildRole.Arn
@@ -230,21 +431,22 @@ Resources:
         Image: aws/codebuild/standard:7.0
         PrivilegedMode: true
         EnvironmentVariables:
-          - {Name: DEMO_NAME, Value: !Ref DemoName}
-          - {Name: ECR_REPOSITORY, Value: !Ref Images}
-          - {Name: ECR_URI, Value: !GetAtt Images.RepositoryUri}
-          - {Name: CA_DOMAIN, Value: !GetAtt Domain.Name}
-          - {Name: CA_REPOSITORY, Value: !GetAtt Packages.Name}
-          - {Name: ECS_CLUSTER, Value: !Ref Cluster}
-          - {Name: TASK_SUBNET, Value: !Ref Subnet}
-          - {Name: TASK_SECURITY_GROUP, Value: !Ref TaskSecurityGroup}
-          - {Name: TASK_EXECUTION_ROLE, Value: !GetAtt ExecutionRole.Arn}
-          - {Name: TASK_LOG_GROUP, Value: !Ref TaskLogs}
-          - {Name: RUNTIME_BASE, Value: !Ref RuntimeBase}
+          - {Name: DEMO_NAME, Value: !Ref DemoName, Type: PLAINTEXT}
+          - {Name: ECR_REPOSITORY, Value: !Ref Images, Type: PLAINTEXT}
+          - {Name: ECR_URI, Value: !GetAtt Images.RepositoryUri, Type: PLAINTEXT}
+          - {Name: CA_DOMAIN, Value: !GetAtt Domain.Name, Type: PLAINTEXT}
+          - {Name: CA_REPOSITORY, Value: !GetAtt Packages.Name, Type: PLAINTEXT}
+          - {Name: ECS_CLUSTER, Value: !Ref Cluster, Type: PLAINTEXT}
+          - {Name: TASK_SUBNET, Value: !Ref Subnet, Type: PLAINTEXT}
+          - {Name: TASK_SECURITY_GROUP, Value: !Ref TaskSecurityGroup, Type: PLAINTEXT}
+          - {Name: TASK_EXECUTION_ROLE, Value: !GetAtt ExecutionRole.Arn, Type: PLAINTEXT}
+          - {Name: TASK_LOG_GROUP, Value: !Ref TaskLogs, Type: PLAINTEXT}
+          - {Name: RUNTIME_BASE, Value: !Ref RuntimeBase, Type: PLAINTEXT}
       LogsConfig:
         CloudWatchLogs: {Status: ENABLED, GroupName: !Ref BuildLogs}
 Outputs:
   Bucket: {Value: !Ref EvidenceBucket}
+  AccessLogBucket: {Value: !Ref AccessLogBucket}
   Project: {Value: !Ref Build}
   Repository: {Value: !Ref Images}
   Domain: {Value: !GetAtt Domain.Name}

@@ -7,8 +7,10 @@ containers have passed local Java 11 smoke checks with no network and a
 read-only filesystem. CloudFormation linting and offline failure-path tests
 pass. On 25 November 2026, one run in ap-southeast-1 passed CodeArtifact
 publication, all scenarios, ECR image creation and both Fargate tasks with
-Inspector skipped. Inspector results, backport recognition and stack cleanup
-remain unverified. Results in other accounts are not guaranteed.
+Inspector skipped. That run preceded the current networking, encryption and
+logging changes, which have not been deployed and need live validation.
+Inspector results, backport recognition and stack cleanup remain unverified.
+Results in other accounts are not guaranteed.
 
 ## What runs
 
@@ -54,14 +56,18 @@ a successful scan alone does not prove recognition of the Lightwell backport.
 
 - A dedicated demo AWS account and selected Region with these services enabled.
 - Python 3.10+ and AWS credentials, preferably an existing SSO profile.
-- Permission to provision the CloudFormation resources and their IAM roles.
+- Permission to provision the CloudFormation resources, IAM roles and
+  customer-managed IAM policies and KMS key. Cleanup also needs permission to
+  change evidence-bucket logging, list and delete log-bucket object versions and
+  delete the log bucket.
 - Amazon Inspector ECR scanning enabled by the account administrator, unless
   explicitly running without Inspector.
 - Approval to publish this exact Red Hat demo artifact into the account.
   Repository availability is not a redistribution licence.
 - A cost limit agreed with the account owner. This package does not enforce a
-  monetary cap. CodeBuild, Fargate, Inspector, storage, logs and public IPv4
-  addresses can incur charges. There is no NAT gateway or always-on app task.
+  monetary cap. CodeBuild, Fargate, Inspector, storage, logs, the KMS key and
+  three interface VPC endpoints can incur charges, including endpoint hourly and
+  data-processing charges. There is no NAT gateway or always-on app task.
 
 Use a virtual environment outside the source archive:
 
@@ -95,8 +101,9 @@ A source-manifest mismatch prevents packaging.
 
 The template creates CodeArtifact, ECR, an encrypted private S3 bucket,
 CodeBuild, an ECS cluster, logs, scoped roles and a small VPC. It creates no
-running Fargate task until a build starts. The task subnet has an internet route
-for image pulls and logging; tasks receive public IPs but have no inbound
+running Fargate task until a build starts. Fargate tasks have no public IP or
+internet route: private ECR and CloudWatch Logs interface endpoints and an S3
+gateway endpoint support image pulls and logging. Tasks have no inbound
 security-group rules, application listener, load balancer or task IAM role.
 
 CodeBuild uses a privileged managed Linux image for Docker builds. Do not run
@@ -114,6 +121,22 @@ its own. The runtime base can be pinned:
 The default is the Corretto 11 tag. Every run resolves it once and records the
 actual digest. The CodeBuild managed image and Maven plugin transitives can
 also change; this package is not a fully hermetic build.
+
+## CloudFormation Guard findings
+
+The evidence and access-log buckets require HTTPS and have versioning enabled.
+Evidence-bucket access logging writes to a separate private, SSE-S3-encrypted
+bucket. Both buckets expire current and noncurrent versions through lifecycle
+rules. CloudWatch log groups use a customer-managed KMS key, and the task subnet
+has no internet gateway route. Execution and build permissions use
+customer-managed IAM policies. CodeBuild's plaintext environment variables are
+non-secret configuration, not AWS access keys.
+
+The access-log destination alone suppresses `S3_BUCKET_LOGGING_ENABLED`:
+logging that bucket to itself would create recursive logging. The evidence
+bucket is not exempt. Local Guard checks pass for the S3, log encryption and
+CodeBuild rules; the internet-route rule skips because no internet gateway
+route exists. Review account requirements and validate the changes in AWS.
 
 ## Configure scanning
 
@@ -218,13 +241,22 @@ runtime behaviour. Live acceptance in the target account is still required.
 
 Cleanup refuses to proceed while a build is active. It stops remaining tasks,
 deregisters active demo task definitions and removes the exact scanning rule
-created by the helper if that rule is still unchanged. It deletes the stack,
-including demo images, packages, logs and networking.
+created by the helper if that rule is still unchanged. It verifies and disables
+evidence-bucket access logging, deletes the stack, then deletes the dedicated
+access-log bucket's versions and delete markers and the bucket itself. Cleanup
+refuses to delete unexpected objects or change a different logging target.
+If log deletion fails or a delayed delivery leaves the bucket nonempty, it
+reports the bucket for manual cleanup. Older stacks without a log-bucket output
+retain their previous cleanup behavior.
 
-The evidence bucket is retained; objects expire after 30 days. Delete that
-bucket separately when its evidence is no longer needed. Inspector remains
-enabled, and manually configured scanning rules remain under administrator
-control. Inactive task-definition revisions can remain as AWS history.
+The evidence bucket and its HTTPS-only policy are retained. Current objects
+expire after 30 days and
+noncurrent versions expire 30 days after becoming noncurrent; delete markers
+can remain. Delete its versions, delete markers and bucket separately when the
+evidence is no longer needed. Inspector remains enabled, and manually
+configured scanning rules remain under administrator control. Inactive
+task-definition revisions can remain as AWS history. The KMS key enters its
+seven-day deletion waiting period after stack deletion.
 
 If a build is force-stopped, run cleanup to catch any task left behind.
 Do not delete the stack before stopping its tasks.

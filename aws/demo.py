@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from mypy_boto3_ecr.client import ECRClient
     from mypy_boto3_ecs.client import ECSClient
     from mypy_boto3_s3.client import S3Client
+    from mypy_boto3_s3.type_defs import ObjectIdentifierTypeDef
     from mypy_boto3_sts.client import STSClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -297,6 +298,32 @@ def monitor(session: boto3.Session, build_id: str) -> None:
         time.sleep(15)
 
 
+def delete_access_log_bucket(s3: S3Client, bucket: str) -> None:
+    objects: list[ObjectIdentifierTypeDef] = []
+    for page in s3.get_paginator("list_object_versions").paginate(Bucket=bucket):
+        items: list[Mapping[str, Any]] = [
+            *page.get("Versions", []),
+            *page.get("DeleteMarkers", []),
+        ]
+        for item in items:
+            key, version = item.get("Key"), item.get("VersionId")
+            if key is None or version is None or not key.startswith("access/"):
+                raise RuntimeError(
+                    f"Unexpected object in access-log bucket {bucket}; review it "
+                    "before deleting the bucket"
+                )
+            objects.append({"Key": key, "VersionId": version})
+    for offset in range(0, len(objects), 1000):
+        result = s3.delete_objects(
+            Bucket=bucket, Delete={"Objects": objects[offset : offset + 1000]}
+        )
+        if result.get("Errors"):
+            raise RuntimeError(
+                f"Could not delete access logs from bucket {bucket}: {result['Errors']}"
+            )
+    s3.delete_bucket(Bucket=bucket)
+
+
 def cleanup(session: boto3.Session, state: Mapping[str, str], stack: str) -> None:
     builds = _aws_client(session, "codebuild")
     ids = builds.list_builds_for_project(projectName=state["Project"])["ids"]
@@ -341,11 +368,37 @@ def cleanup(session: boto3.Session, state: Mapping[str, str], stack: str) -> Non
         if owned in rules:
             rules = [rule for rule in rules if rule != owned]
             ecr.put_registry_scanning_configuration(scanType=scan_type, rules=rules)
+    log_bucket = state.get("AccessLogBucket")
+    if log_bucket:
+        if log_bucket == state["Bucket"]:
+            raise RuntimeError("Access-log and evidence buckets must be distinct")
+        logging = s3.get_bucket_logging(Bucket=state["Bucket"]).get("LoggingEnabled")
+        if logging:
+            if (
+                logging.get("TargetBucket") != log_bucket
+                or logging.get("TargetPrefix") != "access/"
+            ):
+                raise RuntimeError(
+                    f"Evidence bucket logging does not match {log_bucket}/access/"
+                )
+            s3.put_bucket_logging(Bucket=state["Bucket"], BucketLoggingStatus={})
     cf = _aws_client(session, "cloudformation")
     cf.delete_stack(StackName=stack)
     cf.get_waiter("stack_delete_complete").wait(StackName=stack)
+    if log_bucket:
+        try:
+            delete_access_log_bucket(s3, log_bucket)
+        except (ClientError, RuntimeError) as error:
+            raise RuntimeError(
+                f"Stack deleted, but access-log bucket {log_bucket} remains; "
+                f"review and remove it manually: {error}"
+            ) from error
+        print(f"Deleted access-log bucket: {log_bucket}")
     print(f"Deleted demo stack. Evidence bucket retained: {state['Bucket']}")
-    print("Inspector remains enabled. Evidence objects expire after 30 days.")
+    print(
+        "Inspector remains enabled. Evidence current objects expire after 30 days; "
+        "noncurrent versions expire later."
+    )
 
 
 def main() -> int | None:

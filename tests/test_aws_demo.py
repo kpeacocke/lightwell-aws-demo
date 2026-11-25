@@ -22,6 +22,7 @@ from mypy_boto3_codebuild.client import CodeBuildClient
 from mypy_boto3_ecr.client import ECRClient
 from mypy_boto3_ecs.client import ECSClient
 from mypy_boto3_logs.client import CloudWatchLogsClient
+from mypy_boto3_s3.client import S3Client
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,6 +41,10 @@ def _test_client(service_name: Literal["ecr"]) -> ECRClient: ...
 
 @overload
 def _test_client(service_name: Literal["logs"]) -> CloudWatchLogsClient: ...
+
+
+@overload
+def _test_client(service_name: Literal["s3"]) -> S3Client: ...
 
 
 def _test_client(service_name: str) -> Any:
@@ -560,8 +565,157 @@ class DemoTests(unittest.TestCase):
                 ecs, logs, {"uri": "repo@sha256:test"}, "lightwell", Path(directory)
             )
         self.assertEqual(result["status"], "PASS")
+        self.assertEqual(
+            ecs.run_task.call_args.kwargs["networkConfiguration"][
+                "awsvpcConfiguration"
+            ]["assignPublicIp"],
+            "DISABLED",
+        )
         ecs.stop_task.assert_not_called()
         ecs.deregister_task_definition.assert_called_once()
+
+    def test_access_log_cleanup_deletes_paginated_versions_and_markers(self):
+        client = _test_client("s3")
+        with Stubber(client) as stub:
+            stub.add_response(
+                "list_object_versions",
+                {
+                    "IsTruncated": True,
+                    "NextKeyMarker": "access/log",
+                    "NextVersionIdMarker": "version",
+                    "Versions": [{"Key": "access/log", "VersionId": "version"}],
+                },
+                {"Bucket": "demo-logs"},
+            )
+            stub.add_response(
+                "list_object_versions",
+                {
+                    "IsTruncated": False,
+                    "DeleteMarkers": [{"Key": "access/log", "VersionId": "marker"}],
+                },
+                {
+                    "Bucket": "demo-logs",
+                    "KeyMarker": "access/log",
+                    "VersionIdMarker": "version",
+                },
+            )
+            stub.add_response(
+                "delete_objects",
+                {},
+                {
+                    "Bucket": "demo-logs",
+                    "Delete": {
+                        "Objects": [
+                            {"Key": "access/log", "VersionId": "version"},
+                            {"Key": "access/log", "VersionId": "marker"},
+                        ]
+                    },
+                },
+            )
+            stub.add_response("delete_bucket", {}, {"Bucket": "demo-logs"})
+            cli.delete_access_log_bucket(client, "demo-logs")
+            stub.assert_no_pending_responses()
+
+    def test_access_log_cleanup_stops_on_unexpected_objects_or_delete_errors(self):
+        client = _test_client("s3")
+        with Stubber(client) as stub:
+            stub.add_response(
+                "list_object_versions",
+                {"Versions": [{"Key": "other/data", "VersionId": "version"}]},
+                {"Bucket": "demo-logs"},
+            )
+            with self.assertRaisesRegex(RuntimeError, "Unexpected object"):
+                cli.delete_access_log_bucket(client, "demo-logs")
+            stub.add_response(
+                "list_object_versions",
+                {"Versions": [{"Key": "access/log", "VersionId": "version"}]},
+                {"Bucket": "demo-logs"},
+            )
+            stub.add_response(
+                "delete_objects",
+                {"Errors": [{"Key": "access/log", "Code": "AccessDenied"}]},
+                {
+                    "Bucket": "demo-logs",
+                    "Delete": {
+                        "Objects": [{"Key": "access/log", "VersionId": "version"}]
+                    },
+                },
+            )
+            with self.assertRaisesRegex(RuntimeError, "AccessDenied"):
+                cli.delete_access_log_bucket(client, "demo-logs")
+            stub.assert_no_pending_responses()
+
+    def test_cleanup_refuses_unexpected_logging_destination(self):
+        session: Any = Mock()
+        clients: dict[str, Any] = {
+            name: Mock() for name in ("codebuild", "ecs", "ecr", "s3", "cloudformation")
+        }
+        session.client.side_effect = clients.__getitem__
+        clients["codebuild"].list_builds_for_project.return_value = {"ids": []}
+        clients["ecs"].get_paginator.return_value.paginate.return_value = []
+        from botocore.exceptions import ClientError
+
+        clients["s3"].head_object.side_effect = ClientError(
+            {"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject"
+        )
+        clients["s3"].get_bucket_logging.return_value = {
+            "LoggingEnabled": {"TargetBucket": "other", "TargetPrefix": "access/"}
+        }
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            cli.cleanup(
+                session,
+                {
+                    "Project": "demo",
+                    "Cluster": "demo",
+                    "Bucket": "evidence",
+                    "AccessLogBucket": "demo-logs",
+                },
+                "demo",
+            )
+        clients["s3"].put_bucket_logging.assert_not_called()
+        clients["cloudformation"].delete_stack.assert_not_called()
+
+    def test_cleanup_disables_logging_before_stack_and_bucket_deletion(self):
+        session: Any = Mock()
+        clients: dict[str, Any] = {
+            name: Mock() for name in ("codebuild", "ecs", "ecr", "s3", "cloudformation")
+        }
+        session.client.side_effect = clients.__getitem__
+        clients["codebuild"].list_builds_for_project.return_value = {"ids": []}
+        clients["ecs"].get_paginator.return_value.paginate.return_value = []
+        from botocore.exceptions import ClientError
+
+        clients["s3"].head_object.side_effect = ClientError(
+            {"Error": {"Code": "404", "Message": "Not found"}}, "HeadObject"
+        )
+        clients["s3"].get_bucket_logging.return_value = {
+            "LoggingEnabled": {"TargetBucket": "demo-logs", "TargetPrefix": "access/"}
+        }
+        calls = Mock()
+        calls.attach_mock(clients["s3"].put_bucket_logging, "disable")
+        calls.attach_mock(clients["cloudformation"].delete_stack, "stack")
+        waiter = clients["cloudformation"].get_waiter.return_value
+        calls.attach_mock(waiter.wait, "wait")
+        with patch.object(cli, "delete_access_log_bucket") as delete_logs:
+            calls.attach_mock(delete_logs, "bucket")
+            cli.cleanup(
+                session,
+                {
+                    "Project": "demo",
+                    "Cluster": "demo",
+                    "Bucket": "evidence",
+                    "AccessLogBucket": "demo-logs",
+                },
+                "demo",
+            )
+        self.assertEqual(
+            [call[0] for call in calls.mock_calls],
+            ["disable", "stack", "wait", "bucket"],
+        )
+        clients["s3"].put_bucket_logging.assert_called_once_with(
+            Bucket="evidence", BucketLoggingStatus={}
+        )
+        delete_logs.assert_called_once_with(clients["s3"], "demo-logs")
 
 
 if __name__ == "__main__":

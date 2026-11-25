@@ -154,7 +154,8 @@ as proof that the CVE is fixed.
 ## AWS integration and validation
 
 The integration is implemented under `aws/`. One run passed in an AWS account
-with Inspector skipped; rehearse in the target account before presenting.
+with Inspector skipped, before the current AWS security and networking changes;
+rehearse the current configuration in the target account before presenting.
 The setup guide covers required permissions, Inspector enablement, artifact
 publication, evidence, costs and cleanup. The package does not enforce a
 monetary cap.

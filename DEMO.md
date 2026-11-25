@@ -182,7 +182,7 @@ Local Maven build <-- Maven Central / Lightwell demo repositories
 Dependency checks + payment smoke check --> Local evidence
 ```
 
-The implemented AWS path, validated once with Inspector skipped, is:
+The implemented AWS path, previously validated once with Inspector skipped, is:
 
 ```text
 CodeArtifact --> CodeBuild --> ECR --> Inspector findings
@@ -193,7 +193,9 @@ CodeArtifact --> CodeBuild --> ECR --> Inspector findings
 ```
 
 CloudFormation and IAM provide the deployment definition and roles. The files
-exist under `aws/`; the successful run created AWS resources.
+exist under `aws/`; the successful run created AWS resources. The current
+private-networking, log-encryption and access-logging changes have not yet
+been live-validated.
 
 ### CodeArtifact delivery
 

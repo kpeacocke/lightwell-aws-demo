@@ -408,7 +408,7 @@ def run_fargate(
                 "awsvpcConfiguration": {
                     "subnets": [os.environ["TASK_SUBNET"]],
                     "securityGroups": [os.environ["TASK_SECURITY_GROUP"]],
-                    "assignPublicIp": "ENABLED",
+                    "assignPublicIp": "DISABLED",
                 }
             },
         )

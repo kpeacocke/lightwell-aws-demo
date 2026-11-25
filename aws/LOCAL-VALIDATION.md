@@ -37,4 +37,6 @@ These local checks created no AWS resources. A subsequent live run passed
 CodeArtifact publication and resolution, CodeBuild scenarios, ECR push and
 Fargate execution with CloudWatch output in ap-southeast-1, with Inspector
 skipped. Inspector coverage, Lightwell patch recognition and stack cleanup
-remain unverified.
+remain unverified. The live run preceded the current private networking,
+customer-managed log encryption and S3 access-logging changes; those changes
+have not been live-validated.
