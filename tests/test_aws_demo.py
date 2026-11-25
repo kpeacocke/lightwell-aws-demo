@@ -25,6 +25,7 @@ from mypy_boto3_logs.client import CloudWatchLogsClient
 from mypy_boto3_s3.client import S3Client
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "aws"))
 
 
 @overload
@@ -120,6 +121,7 @@ class DemoTests(unittest.TestCase):
             with zipfile.ZipFile(target) as archive:
                 names = archive.namelist()
             self.assertIn("aws/pipeline.py", names)
+            self.assertIn("aws/advisory.py", names)
             self.assertIn("source/pom_3_lightwell.xml", names)
             self.assertFalse(
                 any(n.startswith(("evidence/", ".git/", ".vscode/")) for n in names)
@@ -243,6 +245,7 @@ class DemoTests(unittest.TestCase):
                 result = root / "evidence/run/results.json"
                 result.parent.mkdir(parents=True)
                 result.write_text(json.dumps(report))
+                pipeline.write_json(root / "evidence/aws/images.json", images)
 
             with (
                 patch.object(pipeline, "ROOT", root),
@@ -257,6 +260,7 @@ class DemoTests(unittest.TestCase):
                     pipeline, "run_fargate", return_value={"status": "PASS"}
                 ) as run,
                 patch.object(pipeline, "scan_images") as scan,
+                patch("advisory.fetch", side_effect=TimeoutError),
             ):
                 self.assertEqual(pipeline.main(), 0)
             evidence = root / "evidence/aws"
@@ -265,6 +269,9 @@ class DemoTests(unittest.TestCase):
         self.assertEqual(summary["status"], "INTEGRATION_PASS_INSPECTOR_SKIPPED")
         self.assertEqual(summary["stages"]["inspector"], "SKIPPED")
         self.assertFalse(summary["security_fix_verified"])
+        self.assertEqual(
+            summary["lightwell_advisory"]["correlation"]["state"], "UNAVAILABLE"
+        )
         self.assertEqual(set(comparison), set(images))
         self.assertTrue(
             all(result["interpretation"] == "SKIPPED" for result in comparison.values())

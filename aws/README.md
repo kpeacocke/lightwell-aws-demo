@@ -211,6 +211,11 @@ the actual AWS build ID and time. Do not substitute local tests for AWS output.
 
 ## Evidence and failure handling
 
+The pipeline also performs a [read-only Lightwell advisory lookup](ADVISORY.md)
+using public OSV data, without Lightwell credentials. Its separate metadata
+correlation never suppresses Inspector findings or verifies binary security.
+See that guide to run it against existing evidence without starting AWS work.
+
 The pipeline creates `evidence/aws/` when it runs; generated files there are
 ignored by Git. CodeBuild still includes them in its artifact ZIP. No empty
 directory placeholder is needed.
@@ -218,6 +223,7 @@ directory placeholder is needed.
 The CodeBuild artifact ZIP contains the original scenario reports and `aws/`:
 
 - `integration.json`: stages, task results and overall outcome.
+- `lightwell-advisory/`: raw public OSV response and structured reconciliation.
 - `codeartifact.json`: package source/destination and vendor hashes.
 - `images.json` and `runtime-base.json`: deployed digests and runtime base.
 - Per-scenario runtime inventories, CycloneDX SBOMs and container smoke logs.

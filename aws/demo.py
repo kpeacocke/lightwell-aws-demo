@@ -88,6 +88,7 @@ def package(destination: Path) -> str:
         "config/empty-settings.xml",
         "config/lightwell-settings.xml",
         "aws/pipeline.py",
+        "aws/advisory.py",
         "aws/Dockerfile",
         "aws/buildspec.yml",
         "aws/requirements.txt",
