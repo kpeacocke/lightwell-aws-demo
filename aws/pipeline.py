@@ -646,6 +646,17 @@ def main() -> int:
             write_json(evidence / "inspector-coverage.json", coverage)
             summary["scans"] = scan_images(ecr, images, evidence)
             summary["status"] = "INTEGRATION_PASS_SECURITY_REVIEW_REQUIRED"
+        from advisory import reconcile
+
+        advisory = reconcile(
+            evidence / "scan-comparison.json",
+            evidence / "images.json",
+            evidence / "lightwell-advisory",
+        )
+        summary["lightwell_advisory"] = {
+            "evidence": "lightwell-advisory/reconciliation.json",
+            "correlation": advisory["correlation"],
+        }
         return 0
     except Exception as error:
         summary["status"] = "FAILED"
