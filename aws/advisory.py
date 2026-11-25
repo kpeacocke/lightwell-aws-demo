@@ -34,6 +34,7 @@ class NoRedirect(HTTPRedirectHandler):
         headers: HTTPMessage,
         newurl: str,
     ) -> None:
+        del req, fp, code, msg, headers, newurl
         return None
 
 
