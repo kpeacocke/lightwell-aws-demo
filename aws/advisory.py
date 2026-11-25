@@ -73,7 +73,12 @@ def advisory_claim(record: dict[str, Any]) -> dict[str, str]:
             r.get("type") == "ECOSYSTEM" and {"fixed": VERSION} in r.get("events", [])
             for r in ranges
         )
-        explicitly_affected = VERSION in affected.get("versions", [])
+        explicitly_affected = any(
+            VERSION in entry.get("versions", [])
+            for entry in record.get("affected", [])
+            if entry.get("package", {}).get("name") == PACKAGE
+            and entry.get("package", {}).get("ecosystem") == ECOSYSTEM
+        )
         if fixed and not explicitly_affected:
             return state(
                 "VERIFIED", "Exact vendor advisory claim matched; not binary proof"
