@@ -61,14 +61,16 @@ credentials must be environment references, never literal values in the file.
 
 With Docker and the VS Code Dev Containers extension installed, open this folder
 and select **Dev Containers: Reopen in Container**. The container provides
-JDK 11, Maven 3.9.9, Python 3, AWS CLI, GitHub CLI (`gh`) and Docker CLI. On
-creation it installs `aws/requirements-dev.txt` into the workspace `.venv`;
-Ruff and cfn-lint are available on the terminal PATH. It also installs
-markdownlint-cli2 0.17.2, Hadolint 2.15.1 and the Python and Ruff VS Code
-extensions. VS Code defaults to
-the `.venv` interpreter; if an interpreter was already selected, choose `.venv` using
-**Python: Select Interpreter**. Rebuild the container after changing its
-configuration; rerun `.venv/bin/python -m pip install -r aws/requirements-dev.txt`
+JDK 11, Maven 3.9.9, Python 3.13, AWS CLI, GitHub CLI (`gh`) and Docker CLI. On
+creation it recreates the workspace `.venv` and installs
+`aws/requirements-dev.txt`; this replaces any existing host `.venv`. Ruff and
+cfn-lint are available on the terminal PATH. It
+also installs markdownlint-cli2 0.17.2, Hadolint 2.15.1 and the Python and Ruff
+VS Code extensions. VS Code defaults to
+the container's `.venv` interpreter; if an interpreter was already selected, choose
+`.venv/bin/python` using **Python: Select Interpreter**. Rebuild the container
+after changing its configuration; rerun
+`.venv/bin/python -m pip install -r aws/requirements-dev.txt`
 after changing the requirements. The base image and dev container features can
 receive updates when rebuilt.
 GitHub CLI authentication is separate; run `gh auth login` if needed.

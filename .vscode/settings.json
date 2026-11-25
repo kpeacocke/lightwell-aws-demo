@@ -22,5 +22,17 @@
       "Woodstox",
       "woodstoxdemo"
     ],
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "python.analysis.extraPaths": [
+      "./aws"
+    ],
+    "python.testing.unittestArgs": [
+      "-v",
+      "-s",
+      "./tests",
+      "-p",
+      "test_*.py"
+    ],
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestEnabled": true
 }
