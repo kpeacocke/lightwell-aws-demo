@@ -149,17 +149,30 @@ def start_build(session, state, args):
         )
     from pipeline import enhanced_for_repository
 
-    ecr = session.client("ecr")
-    config = ecr.get_registry_scanning_configuration()["scanningConfiguration"]
-    if not enhanced_for_repository(config, state["Repository"]):
-        raise RuntimeError("Inspector enhanced scanning does not cover this repository")
+    if not args.skip_inspector:
+        ecr = session.client("ecr")
+        config = ecr.get_registry_scanning_configuration()["scanningConfiguration"]
+        if not enhanced_for_repository(config, state["Repository"]):
+            raise RuntimeError(
+                "Inspector enhanced scanning does not cover this repository"
+            )
+    else:
+        print(
+            "Inspector scanning explicitly skipped; no scan evidence will be collected."
+        )
     archive = ROOT / ".aws-demo/source.zip"
     checksum = package(archive)
     key = f"source/{checksum}.zip"
     session.client("s3").upload_file(str(archive), state["Bucket"], key)
-    build = session.client("codebuild").start_build(
-        projectName=state["Project"], sourceLocationOverride=f"{state['Bucket']}/{key}"
-    )["build"]
+    request: dict[str, str | list[dict[str, str]]] = {
+        "projectName": state["Project"],
+        "sourceLocationOverride": f"{state['Bucket']}/{key}",
+    }
+    if args.skip_inspector:
+        request["environmentVariablesOverride"] = [
+            {"name": "INSPECTOR_SCAN_MODE", "value": "skip", "type": "PLAINTEXT"}
+        ]
+    build = session.client("codebuild").start_build(**request)["build"]
     print(json.dumps({"build_id": build["id"], "source_sha256": checksum}, indent=2))
     if args.wait:
         monitor(session, build["id"])
@@ -251,7 +264,14 @@ def main():
     parser.add_argument("--build-id")
     parser.add_argument("--wait", action="store_true")
     parser.add_argument("--allow-demo-artifact-publication", action="store_true")
+    parser.add_argument(
+        "--skip-inspector",
+        action="store_true",
+        help="Run without Inspector scan evidence (run action only)",
+    )
     args = parser.parse_args()
+    if args.skip_inspector and args.action != "run":
+        parser.error("--skip-inspector is only valid for run")
     if not re.fullmatch(r"[a-z][a-z0-9-]{2,30}", args.stack):
         parser.error("Stack name must be 3-31 lowercase letters, digits or hyphens")
     if args.action == "package":

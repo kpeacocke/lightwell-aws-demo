@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from argparse import Namespace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -116,6 +117,142 @@ class DemoTests(unittest.TestCase):
         self.assertTrue(pipeline.enhanced_for_repository(config, "demo"))
         config["rules"][0]["repositoryFilters"][0]["filter"] = "other-*"
         self.assertFalse(pipeline.enhanced_for_repository(config, "demo"))
+
+    def test_build_requires_inspector_unless_explicitly_skipped(self):
+        state = {"Repository": "demo", "Bucket": "bucket", "Project": "project"}
+        session = Mock()
+        ecr, s3, codebuild = Mock(), Mock(), Mock()
+        session.client.side_effect = {"ecr": ecr, "s3": s3, "codebuild": codebuild}.get
+        ecr.get_registry_scanning_configuration.return_value = {
+            "scanningConfiguration": {"scanType": "BASIC"}
+        }
+        codebuild.start_build.return_value = {"build": {"id": "build-id"}}
+        args = Namespace(
+            allow_demo_artifact_publication=True, skip_inspector=False, wait=False
+        )
+        with patch.dict(sys.modules, {"pipeline": pipeline}):
+            args.allow_demo_artifact_publication = False
+            args.skip_inspector = True
+            with self.assertRaisesRegex(RuntimeError, "artifact-publication"):
+                cli.start_build(session, state, args)
+            args.allow_demo_artifact_publication = True
+            args.skip_inspector = False
+            with self.assertRaisesRegex(RuntimeError, "Inspector enhanced scanning"):
+                cli.start_build(session, state, args)
+            codebuild.start_build.assert_not_called()
+            ecr.get_registry_scanning_configuration.return_value = {
+                "scanningConfiguration": {
+                    "scanType": "ENHANCED",
+                    "rules": [
+                        {
+                            "scanFrequency": "SCAN_ON_PUSH",
+                            "repositoryFilters": [{"filter": "demo"}],
+                        }
+                    ],
+                }
+            }
+            with patch.object(cli, "package", return_value="checksum"):
+                cli.start_build(session, state, args)
+            self.assertNotIn(
+                "environmentVariablesOverride", codebuild.start_build.call_args.kwargs
+            )
+            codebuild.start_build.reset_mock()
+            s3.upload_file.reset_mock()
+            args.skip_inspector = True
+            with patch.object(cli, "package", return_value="checksum"):
+                cli.start_build(session, state, args)
+        self.assertEqual(ecr.get_registry_scanning_configuration.call_count, 2)
+        s3.upload_file.assert_called_once()
+        self.assertEqual(
+            codebuild.start_build.call_args.kwargs["environmentVariablesOverride"],
+            [{"name": "INSPECTOR_SCAN_MODE", "value": "skip", "type": "PLAINTEXT"}],
+        )
+        from botocore.validate import validate_parameters
+
+        model = boto3.client(
+            "codebuild",
+            region_name="us-east-1",
+            aws_access_key_id="test",
+            aws_secret_access_key="test",
+        ).meta.service_model.operation_model("StartBuild")
+        validate_parameters(codebuild.start_build.call_args.kwargs, model.input_shape)
+
+    def test_pipeline_skip_records_unscanned_images_and_runs_tasks(self):
+        images = {name: {"uri": f"image:{name}"} for name in pipeline.SCENARIOS}
+        session = Mock()
+        ecr = Mock()
+        session.client.side_effect = lambda name: ecr if name == "ecr" else Mock()
+        report = {
+            "scenarios": [
+                {"name": name, "status": "PASS"}
+                for name in ("baseline", "pinned-failure", "conventional", "lightwell")
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def scenario_command(*args, **kwargs):
+                result = root / "evidence/run/results.json"
+                result.parent.mkdir(parents=True)
+                result.write_text(json.dumps(report))
+
+            with (
+                patch.object(pipeline, "ROOT", root),
+                patch.dict(os.environ, {"INSPECTOR_SCAN_MODE": "skip"}, clear=True),
+                patch.object(pipeline.boto3, "Session", return_value=session),
+                patch.object(
+                    pipeline, "prepare_codeartifact", return_value=("settings", "hash")
+                ),
+                patch.object(pipeline, "command", side_effect=scenario_command),
+                patch.object(pipeline, "build_images", return_value=images),
+                patch.object(
+                    pipeline, "run_fargate", return_value={"status": "PASS"}
+                ) as run,
+                patch.object(pipeline, "scan_images") as scan,
+            ):
+                self.assertEqual(pipeline.main(), 0)
+            evidence = root / "evidence/aws"
+            summary = json.loads((evidence / "integration.json").read_text())
+            comparison = json.loads((evidence / "scan-comparison.json").read_text())
+        self.assertEqual(summary["status"], "INTEGRATION_PASS_INSPECTOR_SKIPPED")
+        self.assertEqual(summary["stages"]["inspector"], "SKIPPED")
+        self.assertFalse(summary["security_fix_verified"])
+        self.assertEqual(set(comparison), set(images))
+        self.assertTrue(
+            all(result["interpretation"] == "SKIPPED" for result in comparison.values())
+        )
+        self.assertEqual(summary["scans"], comparison)
+        self.assertEqual(run.call_count, 2)
+        scan.assert_not_called()
+        ecr.get_registry_scanning_configuration.assert_not_called()
+        self.assertNotIn(
+            "inspector2", [call.args[0] for call in session.client.call_args_list]
+        )
+
+    def test_pipeline_default_requires_coverage_and_rejects_invalid_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            session = Mock()
+            ecr = session.client.return_value
+            ecr.get_registry_scanning_configuration.return_value = {
+                "scanningConfiguration": {"scanType": "BASIC"}
+            }
+            with (
+                patch.object(pipeline, "ROOT", Path(directory)),
+                patch.object(pipeline.boto3, "Session", return_value=session),
+                patch.object(pipeline, "prepare_codeartifact") as prepare,
+            ):
+                for env, message in (
+                    ({"ECR_REPOSITORY": "demo"}, "enhanced scanning"),
+                    ({"INSPECTOR_SCAN_MODE": "typo"}, "Invalid INSPECTOR_SCAN_MODE"),
+                ):
+                    with patch.dict(os.environ, env, clear=True):
+                        self.assertEqual(pipeline.main(), 1)
+                    summary = json.loads(
+                        (Path(directory) / "evidence/aws/integration.json").read_text()
+                    )
+                    self.assertEqual(summary["status"], "FAILED")
+                    self.assertIn(message, summary["error"])
+                prepare.assert_not_called()
 
     def test_missing_scenario_is_not_success(self):
         with self.assertRaises(RuntimeError):

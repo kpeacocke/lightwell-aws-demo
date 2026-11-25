@@ -39,6 +39,7 @@ versions then run as one-shot Fargate tasks by immutable image digest.
 Inspector results are recorded independently. Build success does not require a
 clean vulnerability report. A missing finding is labelled NOT_REPORTED, never
 "fixed". Incomplete scans fail the run and are labelled INCONCLUSIVE.
+The optional no-Inspector mode records scans as SKIPPED, not clean.
 The package inventory and SBOM are separate from Inspector's own coverage;
 a successful scan alone does not prove recognition of the Lightwell backport.
 
@@ -47,7 +48,8 @@ a successful scan alone does not prove recognition of the Lightwell backport.
 - A dedicated demo AWS account and selected Region with these services enabled.
 - Python 3.10+ and AWS credentials, preferably an existing SSO profile.
 - Permission to provision the CloudFormation resources and their IAM roles.
-- Amazon Inspector ECR scanning enabled by the account administrator.
+- Amazon Inspector ECR scanning enabled by the account administrator, unless
+  explicitly running without Inspector.
 - Approval to publish this exact Red Hat demo artifact into the account.
   Repository availability is not a redistribution licence.
 - A cost limit agreed with the account owner. This package does not enforce a
@@ -105,8 +107,9 @@ also change; this package is not a fully hermetic build.
 
 ## Configure scanning
 
-The stack does not silently change account-wide Inspector settings. Have the
-administrator enable Amazon Inspector ECR enhanced scanning first. Then:
+The stack does not silently change account-wide Inspector settings. For the
+default scanned run, have the administrator enable Amazon Inspector ECR enhanced
+scanning first. Then:
 
 ```sh
 .venv/bin/python aws/demo.py enable-scanning \
@@ -116,8 +119,9 @@ administrator enable Amazon Inspector ECR enhanced scanning first. Then:
 This adds only a rule for the demo repository to an already-enhanced registry,
 if needed, and saves the previous configuration in S3. It refuses to convert a
 BASIC registry or overwrite a full rule set. In the latter case, add the demo
-filter to an existing rule through ECR settings. The run command and build both
-check repository coverage before proceeding.
+filter to an existing rule through ECR settings. The default run command and
+build both check repository coverage before proceeding. Skip this step if
+explicitly running without Inspector.
 
 ## Run the integration
 
@@ -137,6 +141,14 @@ It prints the build ID, CloudWatch links and S3 evidence location. To reconnect:
   --profile "$AWS_PROFILE" --region us-east-1 --build-id BUILD_ID
 ```
 
+If Inspector cannot be enabled, add `--skip-inspector` to the `run` command.
+This explicit per-build option skips coverage checks and Inspector calls; it does
+not change account scanning settings or disable any existing ECR scanning. The
+build still publishes the demo artifact, builds images and runs Fargate tasks.
+Its `integration.json` outcome is `INTEGRATION_PASS_INSPECTOR_SKIPPED`, and
+`scan-comparison.json` marks every image `SKIPPED`. No vulnerability scan or
+backport recognition is established by this mode.
+
 CodeBuild runs four scenario checks, publishes three images and runs the two
 remediation tasks sequentially. The scan wait is bounded to ten minutes; task
 execution is bounded to five minutes per task. The overall build limit is one
@@ -149,8 +161,9 @@ hour. Treat a scan deadline as unresolved evidence, not a clean scan.
 2. **CodeBuild:** four expected scenario outcomes, including the intentional
    convergence failure; show the actual dependency differences.
 3. **ECR:** three image tags and immutable digests tied to the same run.
-4. **Inspector:** scan state and real findings for each digest. Any missing
-   target finding requires coverage and advisory review before claiming a fix.
+4. **Inspector:** if enabled, show scan state and findings for each digest. Any
+   missing target finding requires coverage and advisory review before claiming
+   a fix. Otherwise, state clearly that Inspector was skipped.
 5. **ECS and CloudWatch:** both remediation tasks stopped successfully and
    printed PX-1001, 129.99 USD and APPROVED.
 6. **S3:** the evidence archive ties source, packages, images, tasks and scans
@@ -167,7 +180,8 @@ The CodeBuild artifact ZIP contains the original scenario reports and `aws/`:
 - `codeartifact.json`: package source/destination and vendor hashes.
 - `images.json` and `runtime-base.json`: deployed digests and runtime base.
 - Per-scenario runtime inventories, CycloneDX SBOMs and container smoke logs.
-- Per-image Inspector pages, `scan-comparison.json` and resource coverage.
+- `scan-comparison.json`; with Inspector enabled, per-image Inspector pages and
+  resource coverage. In skip mode, per-image results are `SKIPPED`.
 - Task launch/status JSON and captured CloudWatch payment output.
 
 Tokens are held in environment variables; settings reference the variable rather
@@ -176,6 +190,8 @@ before sharing it; it contains account and resource identifiers.
 
 An integration success is labelled
 `INTEGRATION_PASS_SECURITY_REVIEW_REQUIRED`; it is not a CVE-remediation verdict.
+Without Inspector, success is labelled `INTEGRATION_PASS_INSPECTOR_SKIPPED`;
+it is not evidence that images are clean or a vulnerability is fixed.
 CloudFormation schema and mocked SDK checks cannot prove service permissions or
 runtime behaviour. Live acceptance in the target account is still required.
 

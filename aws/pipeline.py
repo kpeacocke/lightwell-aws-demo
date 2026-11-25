@@ -464,12 +464,19 @@ def main():
     ecr = session.client("ecr")
     summary = {"status": "RUNNING", "stages": {}, "security_fix_verified": False}
     try:
-        config = ecr.get_registry_scanning_configuration()["scanningConfiguration"]
-        write_json(evidence / "registry-scanning.json", config)
-        if not enhanced_for_repository(config, os.environ["ECR_REPOSITORY"]):
-            raise RuntimeError(
-                "Enable Inspector ECR enhanced scanning for this repository first"
-            )
+        scan_mode = os.environ.get("INSPECTOR_SCAN_MODE", "required")
+        if scan_mode not in ("required", "skip"):
+            raise RuntimeError(f"Invalid INSPECTOR_SCAN_MODE: {scan_mode}")
+        if scan_mode == "required":
+            config = ecr.get_registry_scanning_configuration()["scanningConfiguration"]
+            write_json(evidence / "registry-scanning.json", config)
+            if not enhanced_for_repository(config, os.environ["ECR_REPOSITORY"]):
+                raise RuntimeError(
+                    "Enable Inspector ECR enhanced scanning for this repository first"
+                )
+        else:
+            summary["stages"]["inspector"] = "SKIPPED"
+            print("Inspector scanning skipped; no scan evidence will be collected.")
         settings, vendor_hash = prepare_codeartifact(
             session.client("codeartifact"), work, evidence
         )
@@ -505,21 +512,36 @@ def main():
                 evidence,
             )
         summary["stages"]["fargate"] = "PASS"
-        # Separate resource coverage from findings. Preserve both raw responses.
-        coverage = list(
-            session.client("inspector2")
-            .get_paginator("list_coverage")
-            .paginate(
-                filterCriteria={
-                    "ecrRepositoryName": [
-                        {"comparison": "EQUALS", "value": os.environ["ECR_REPOSITORY"]}
-                    ]
-                },
+        if scan_mode == "skip":
+            summary["scans"] = {
+                name: {
+                    "interpretation": "SKIPPED",
+                    "reason": "Inspector scanning explicitly skipped",
+                    "backport_recognition": "NOT_ESTABLISHED",
+                }
+                for name in images
+            }
+            write_json(evidence / "scan-comparison.json", summary["scans"])
+            summary["status"] = "INTEGRATION_PASS_INSPECTOR_SKIPPED"
+        else:
+            # Separate resource coverage from findings. Preserve both raw responses.
+            coverage = list(
+                session.client("inspector2")
+                .get_paginator("list_coverage")
+                .paginate(
+                    filterCriteria={
+                        "ecrRepositoryName": [
+                            {
+                                "comparison": "EQUALS",
+                                "value": os.environ["ECR_REPOSITORY"],
+                            }
+                        ]
+                    },
+                )
             )
-        )
-        write_json(evidence / "inspector-coverage.json", coverage)
-        summary["scans"] = scan_images(ecr, images, evidence)
-        summary["status"] = "INTEGRATION_PASS_SECURITY_REVIEW_REQUIRED"
+            write_json(evidence / "inspector-coverage.json", coverage)
+            summary["scans"] = scan_images(ecr, images, evidence)
+            summary["status"] = "INTEGRATION_PASS_SECURITY_REVIEW_REQUIRED"
         return 0
     except Exception as error:
         summary["status"] = "FAILED"
